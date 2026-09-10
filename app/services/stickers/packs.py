@@ -67,6 +67,11 @@ CURATED_PACKS: tuple[CuratedPack, ...] = (
     CuratedPack("Sleepy", "morning_night", "Sleepy"),
     CuratedPack("Dream", "morning_night", "Dream"),
     CuratedPack("Night", "morning_night", "Night"),
+    # --- anime --------------------------------------------------------------
+    CuratedPack("SouFrierenp_2fx", "anime", "Sousou no Frieren"),
+    CuratedPack("Randomharkhd", "anime", "Anime Daily"),
+    CuratedPack("longanimepack", "anime", "Long Girls"),
+    CuratedPack("OurOmegaLeadernim", "anime", "Our Omega Leader"),
 )
 
 

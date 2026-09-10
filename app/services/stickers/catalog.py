@@ -22,6 +22,7 @@ STICKER_CATEGORIES: tuple[StickerCategory, ...] = (
     StickerCategory(key="aesthetic", label="✨ Aesthetic"),
     StickerCategory(key="savage", label="😈 Savage"),
     StickerCategory(key="morning_night", label="🌙 Good Morning / Good Night"),
+    StickerCategory(key="anime", label="🎌 Anime"),
 )
 
 CATEGORY_KEYS = frozenset(c.key for c in STICKER_CATEGORIES)

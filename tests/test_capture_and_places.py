@@ -15,7 +15,7 @@ from app.data.device_presets import (
 )
 from app.data.locations import COUNTRIES, get_city, get_country, validate_catalog
 from app.services.media.capture import derive_shot
-from app.services.stickers.catalog import CATEGORY_KEYS
+from app.services.stickers.catalog import CATEGORY_KEYS, STICKER_CATEGORIES
 from app.services.stickers.packs import CURATED_PACKS, packs_for_category, validate_packs
 from app.services.timeofday import TimeOfDay
 
@@ -199,3 +199,38 @@ def test_every_sticker_category_has_curated_packs():
 def test_curated_pack_names_are_unique():
     names = [p.telegram_set_name for p in CURATED_PACKS]
     assert len(names) == len(set(names))
+
+
+def test_anime_is_offered_as_its_own_category():
+    labels = {c.key: c.label for c in STICKER_CATEGORIES}
+    assert labels["anime"] == "\U0001f38c Anime"
+
+
+def test_the_original_categories_all_survive():
+    keys = {c.key for c in STICKER_CATEGORIES}
+    assert {
+        "reactions",
+        "cute",
+        "flirty",
+        "aesthetic",
+        "savage",
+        "morning_night",
+    } <= keys
+
+
+def test_anime_has_enough_packs_for_a_varied_batch():
+    packs = packs_for_category("anime")
+    # A batch draws one sticker per pack, so several packs means several
+    # different sources rather than one pack repeated.
+    assert len(packs) >= 4
+    assert len({p.telegram_set_name for p in packs}) == len(packs)
+
+
+def test_anime_packs_are_the_ones_that_were_curated():
+    names = {p.telegram_set_name for p in packs_for_category("anime")}
+    assert names == {
+        "SouFrierenp_2fx",
+        "Randomharkhd",
+        "longanimepack",
+        "OurOmegaLeadernim",
+    }
