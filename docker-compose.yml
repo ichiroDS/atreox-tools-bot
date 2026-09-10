@@ -1,0 +1,35 @@
+# Local convenience only. Production deploys the image from the Dockerfile
+# directly - the entrypoint waits for the database and migrates on its own, so
+# no orchestration is required.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: atreox
+      POSTGRES_PASSWORD: atreox
+      POSTGRES_DB: atreox
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atreox -d atreox"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  bot:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://atreox:atreox@db:5432/atreox
+      TEMP_ROOT: /tmp/atreox-tools
+    depends_on:
+      db:
+        condition: service_healthy
+    tmpfs:
+      # User media never touches a persistent volume.
+      - /tmp/atreox-tools:mode=1777
+    restart: unless-stopped
+
+volumes:
+  pgdata:

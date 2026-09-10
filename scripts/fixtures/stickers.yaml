@@ -1,0 +1,76 @@
+# Example fixture for `python -m scripts.seed_stickers`.
+#
+# The live catalog is NOT seeded from here: `python -m scripts.sync_stickers`
+# resolves the curated pack names in app/services/stickers/packs.py against the
+# Bot API and stores real file_ids. Use this file only to load packs of your own
+# whose ids you captured by hand.
+#
+# IMPORTANT: `file_id` values below are PLACEHOLDERS. Telegram file_ids are
+# bot-specific, so they must be captured with your own bot before seeding:
+#   1. set ADMIN_USER_IDS=<your telegram user id> in .env
+#   2. start the bot and send it a sticker from the pack
+#   3. copy the file_id it replies with into this file
+# Sending a placeholder id makes Telegram reject that sticker; the batch
+# survives it, but the pack will silently never appear.
+sticker_sets:
+  - telegram_set_name: HotCherry
+    title: Hot Cherry
+    category: reactions
+    enabled: true
+    samples:
+      - file_id: REPLACE_ME_hotcherry_1
+        emoji: "😂"
+        weight: 2
+      - file_id: REPLACE_ME_hotcherry_2
+        emoji: "😭"
+
+  - telegram_set_name: UtyaDuck
+    title: Utya the Duck
+    category: reactions
+    samples:
+      - file_id: REPLACE_ME_utya_1
+        emoji: "🤣"
+
+  - telegram_set_name: PandaSeries
+    title: Panda Series
+    category: cute
+    samples:
+      - file_id: REPLACE_ME_panda_1
+        emoji: "🥰"
+
+  - telegram_set_name: CatsPack
+    title: Cats
+    category: cute
+    samples:
+      - file_id: REPLACE_ME_cats_1
+        emoji: "😻"
+
+  - telegram_set_name: LoveMood
+    title: Love Mood
+    category: flirty
+    samples:
+      - file_id: REPLACE_ME_love_1
+        emoji: "💖"
+
+  - telegram_set_name: AestheticVibes
+    title: Aesthetic Vibes
+    category: aesthetic
+    samples:
+      - file_id: REPLACE_ME_aesthetic_1
+        emoji: "✨"
+
+  - telegram_set_name: SavageReplies
+    title: Savage Replies
+    category: savage
+    samples:
+      - file_id: REPLACE_ME_savage_1
+        emoji: "😈"
+
+  - telegram_set_name: MorningNight
+    title: Morning and Night
+    category: morning_night
+    samples:
+      - file_id: REPLACE_ME_morning_1
+        emoji: "🌅"
+      - file_id: REPLACE_ME_night_1
+        emoji: "🌙"

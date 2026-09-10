@@ -1,0 +1,60 @@
+# --- secrets ---------------------------------------------------------------
+# The real BOT_TOKEN and ADMIN_USER_IDS live here. Never commit it.
+.env
+.env.*
+!.env.example
+*.env.local
+secrets.*
+
+# --- local databases -------------------------------------------------------
+# Production must never pick up a committed development database.
+atreox_tools.db
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# --- user media and temp work ----------------------------------------------
+tmp/
+temp/
+atreox-tools/
+*.mp4
+*.mov
+*.m4v
+*.webm
+*.mkv
+*.jpg
+*.jpeg
+*.png
+*.heic
+*.heif
+*.webp
+*.tiff
+*.dng
+
+# --- logs ------------------------------------------------------------------
+*.log
+bot.log
+bot.err.log
+
+# --- python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+.coverage
+htmlcov/
+
+# --- editors / os ----------------------------------------------------------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

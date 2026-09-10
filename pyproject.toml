@@ -1,0 +1,33 @@
+[project]
+name = "atreox-tools-bot"
+version = "0.1.0"
+description = "Atreox Tools - free Telegram utility bot for creators"
+requires-python = ">=3.10"
+dependencies = [
+    "aiogram>=3.15,<4",
+    "SQLAlchemy[asyncio]>=2.0.36",
+    "alembic>=1.14",
+    "asyncpg>=0.30",
+    "aiosqlite>=0.20",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]

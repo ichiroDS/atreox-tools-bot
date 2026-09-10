@@ -1,0 +1,37 @@
+# Keep secrets, local state and dev-only files out of the build context.
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+*.egg-info
+.coverage
+htmlcov
+
+# Local databases must never reach the image.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Logs and scratch media.
+*.log
+tmp/
+temp/
+
+# Not needed at runtime.
+tests
+docker-compose.yml
+README.md
+requirements-dev.txt
+.idea
+.vscode
