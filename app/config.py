@@ -12,13 +12,65 @@ from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 from app.utils.binaries import resolve_binary
+
+logger = logging.getLogger(__name__)
 
 _VALID_LOG_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
 
 # Used whenever DATABASE_URL is absent: local dev needs no database server.
 LOCAL_SQLITE_URL = "sqlite+aiosqlite:///./atreox_tools.db"
+
+# The only async drivers this application ships. Everything the engine touches
+# goes through create_async_engine, so a synchronous driver cannot work here.
+ASYNC_DRIVERS: dict[str, str] = {
+    # "postgres" is the legacy scheme Heroku-style platforms still hand out.
+    "postgres": "postgresql+asyncpg",
+    "postgresql": "postgresql+asyncpg",
+    "sqlite": "sqlite+aiosqlite",
+}
+
+
+def normalise_database_url(raw: str) -> str:
+    """Force a DATABASE_URL onto this application's async driver.
+
+    Managed platforms hand out libpq-style URLs - Railway and Heroku supply
+    ``postgres://`` or ``postgresql://``. SQLAlchemy reads those as "use the
+    default driver", which is psycopg2, and the app dies at import with
+    ``No module named 'psycopg2'``. Rewriting the scheme here means every
+    consumer - the bot, the entrypoint and Alembic - agrees on asyncpg, and no
+    synchronous driver ever has to be installed.
+
+    A URL that already names its async driver is returned untouched.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return LOCAL_SQLITE_URL
+
+    url = make_url(raw)
+    backend = url.drivername.split("+", 1)[0]
+    target = ASYNC_DRIVERS.get(backend)
+    if target is None:
+        # An unknown backend is the operator's business, not ours to rewrite.
+        return raw
+
+    if url.drivername != target:
+        logger.info(
+            "normalised DATABASE_URL driver %r -> %r", url.drivername, target
+        )
+        url = url.set(drivername=target)
+
+    # libpq spells it "sslmode"; asyncpg only understands "ssl", and would
+    # otherwise fail at connect time with an unexpected keyword argument.
+    query = dict(url.query)
+    sslmode = query.pop("sslmode", None)
+    if sslmode is not None:
+        query.setdefault("ssl", sslmode)
+        url = url.set(query=query)
+
+    return url.render_as_string(hide_password=False)
 
 
 class Settings(BaseSettings):
@@ -66,6 +118,13 @@ class Settings(BaseSettings):
     video_note_max_duration: int = Field(default=60, ge=1, le=60)
     # Square side of the produced circle, must stay even for yuv420p.
     video_note_size: int = Field(default=384, ge=128, le=640)
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalise_database_url(cls, value: object) -> object:
+        if isinstance(value, str):
+            return normalise_database_url(value)
+        return value
 
     @field_validator("log_level", mode="before")
     @classmethod

@@ -150,8 +150,11 @@ logged, and database URLs are printed with credentials stripped.
 ### Deploy checklist
 
 1. Provision PostgreSQL and copy its connection string.
-2. Set the environment variables below. `DATABASE_URL` **must** use the
-   `postgresql+asyncpg://` driver - a plain `postgresql://` URL will not work.
+2. Set the environment variables below. `DATABASE_URL` can be pasted in
+   exactly as the platform provides it: `postgres://` and `postgresql://` are
+   rewritten to `postgresql+asyncpg://` at startup, and `?sslmode=` becomes
+   the `?ssl=` spelling asyncpg expects. Only asyncpg is installed - no
+   synchronous driver is needed.
 3. Deploy from GitHub. The entrypoint migrates the empty database on first boot.
 4. Populate the sticker catalog (see *Sticker catalog* below) - a fresh
    database has no packs, so the Sticker Finder would otherwise come up empty.
@@ -181,7 +184,7 @@ an ephemeral container filesystem is exactly right.
 | --- | --- | --- |
 | `BOT_TOKEN` | *(required)* | BotFather token. |
 | `BOT_API_BASE_URL` | `https://api.telegram.org` | Point at a self-hosted Bot API server to lift the 20 MB file limit. Nothing else changes. |
-| `DATABASE_URL` | `sqlite+aiosqlite:///./atreox_tools.db` | Async SQLAlchemy URL. **Production: set a `postgresql+asyncpg://` URL.** Unset locally means SQLite, no server needed. |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./atreox_tools.db` | Async SQLAlchemy URL. Production: any PostgreSQL URL - `postgres://`, `postgresql://` and `postgresql+asyncpg://` are all accepted and normalised onto asyncpg. Unset locally means SQLite, no server needed. |
 | `LOG_LEVEL` | `INFO` | One of CRITICAL/ERROR/WARNING/INFO/DEBUG. |
 | `MAX_FILE_SIZE_MB` | `20` | Rejects larger uploads. Raise only with a local Bot API server. |
 | `PROCESS_TIMEOUT_SECONDS` | `120` | Per-subprocess timeout. |
@@ -199,7 +202,7 @@ Minimum set for a cloud deployment:
 
 ```
 BOT_TOKEN=<from @BotFather>
-DATABASE_URL=postgresql+asyncpg://user:password@host:5432/dbname
+DATABASE_URL=<the platform's PostgreSQL URL, any scheme>
 ADMIN_USER_IDS=<your telegram user id>
 LOG_LEVEL=INFO
 MAX_FILE_SIZE_MB=20
