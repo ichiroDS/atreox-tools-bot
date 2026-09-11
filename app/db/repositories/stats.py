@@ -30,6 +30,8 @@ class Stats:
     jobs: Window = field(default_factory=Window)
     circles: int = 0
     voice_notes: int = 0
+    # Optimizations that actually delivered a smaller file.
+    optimizations: int = 0
     metadata_cleans: int = 0
     metadata_changes: int = 0
     sticker_searches: int = 0
@@ -89,6 +91,14 @@ class StatsRepository:
             jobs=jobs,
             circles=await successful(JobType.CIRCLE),
             voice_notes=await successful(JobType.VOICE_NOTE),
+            # A job that found the file already efficient succeeds without an
+            # output; it is not counted as an optimization.
+            optimizations=await self._count(
+                Job,
+                Job.type == JobType.MEDIA_OPTIMIZE.value,
+                Job.status == JobStatus.SUCCESS.value,
+                Job.output_size.is_not(None),
+            ),
             metadata_cleans=await successful(JobType.METADATA_CLEAN),
             metadata_changes=await successful(JobType.METADATA_CHANGE),
             sticker_searches=await events(Feature.STICKERS),

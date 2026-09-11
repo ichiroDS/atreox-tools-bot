@@ -471,8 +471,8 @@ def test_audio_sources_keep_a_safe_audio_extension_on_disk():
 def test_voice_note_sits_second_in_the_main_menu():
     buttons = [b for row in main_menu().inline_keyboard for b in row]
     assert [b.text for b in buttons] == [
-        "🎥 Video → Circle", "🎙 Voice Note", "🧹 Metadata Studio", "🎭 Find Stickers",
-        "🚀 Grow My Channel", "ℹ️ Help",
+        "🎥 Video → Circle", "🎙 Voice Note", "🗜 Media Optimizer", "🧹 Metadata Studio",
+        "🎭 Find Stickers", "🚀 Grow My Channel", "ℹ️ Help",
     ]
     assert buttons[1].callback_data == MenuCallback(action="voice").pack()
 
@@ -490,7 +490,7 @@ def test_help_describes_the_voice_note():
            "native Telegram voice message." in texts.HELP
     # The existing sections are still there, in order.
     assert texts.HELP.index("Video → Circle") < texts.HELP.index("Voice Note") \
-        < texts.HELP.index("Metadata Studio")
+        < texts.HELP.index("Media Optimizer") < texts.HELP.index("Metadata Studio")
 
 
 async def test_opening_the_tool_prompts_and_records_the_feature(session):

@@ -10,7 +10,7 @@ from aiogram.filters.callback_data import CallbackData
 
 
 class MenuCallback(CallbackData, prefix="menu"):
-    action: str  # circle | voice | metadata | stickers | help | main
+    action: str  # circle | voice | optimize | metadata | stickers | help | main
 
 
 class CircleCallback(CallbackData, prefix="crc"):
@@ -21,6 +21,11 @@ class CircleCallback(CallbackData, prefix="crc"):
 
 class VoiceCallback(CallbackData, prefix="vn"):
     action: str  # forward_help | guide_ios | guide_android | forward_back
+
+
+class OptimizeCallback(CallbackData, prefix="opt"):
+    action: str  # preset | cancel
+    value: str = ""  # small | balanced | high
 
 
 class MetadataCallback(CallbackData, prefix="meta"):

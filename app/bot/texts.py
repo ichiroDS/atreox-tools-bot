@@ -8,6 +8,7 @@ ATREOX_URL = "https://atreoxai.com"
 # --- Menu -------------------------------------------------------------------
 BTN_CIRCLE = "\U0001f3a5 Video \u2192 Circle"
 BTN_VOICE = "\U0001f399 Voice Note"
+BTN_OPTIMIZE = "\U0001f5dc Media Optimizer"
 BTN_METADATA = "\U0001f9f9 Metadata Studio"
 BTN_STICKERS = "\U0001f3ad Find Stickers"
 BTN_GROW = "\U0001f680 Grow My Channel"
@@ -37,6 +38,9 @@ HELP = (
     "🎙 <b>Voice Note</b>\n"
     "Turns audio or the audio track from a video into a native Telegram voice "
     "message.\n\n"
+    "\U0001f5dc <b>Media Optimizer</b>\n"
+    "Reduces photo and video file sizes while keeping them suitable for "
+    "Telegram.\n\n"
     "\U0001f9f9 <b>Metadata Studio</b>\n"
     "Clean metadata or apply a custom content profile to media.\n\n"
     "\U0001f3ad <b>Find Stickers</b>\n"
@@ -187,6 +191,146 @@ VOICE_FORWARD_HELP = _FORWARD_HELP_TITLE + _VOICE_FORWARD_HELP_STEPS
 VOICE_FORWARD_HELP_IOS = "🍎 <b>iOS</b>\n\n" + _VOICE_FORWARD_HELP_STEPS
 VOICE_FORWARD_HELP_ANDROID = "🤖 <b>Android</b>\n\n" + _VOICE_FORWARD_HELP_STEPS
 
+# --- Media optimizer --------------------------------------------------------
+OPTIMIZE_PROMPT = (
+    "🗜 Send me a photo or video.\n\n"
+    "I'll reduce the file size while keeping it suitable for Telegram.\n\n"
+    "Large files are supported.\n\n"
+    "📎 For the best result, send it as a File — Telegram compresses normal "
+    "photos and videos before I receive them."
+)
+OPTIMIZE_ANALYZING = "🔎 Analyzing your file..."
+OPTIMIZE_PROCESSING = "⏳ Optimizing your media..."
+OPTIMIZE_CHOOSE = "Choose optimization:"
+OPTIMIZE_PNG_NOTE = "PNG is optimized losslessly: every pixel and any transparency stay exactly as they are."
+OPTIMIZE_COMPRESSED_NOTE = (
+    "📎 Telegram already compressed this upload. Send the original as a File "
+    "for a better result."
+)
+OPTIMIZE_ALREADY_OPTIMIZED = "✅ This file is already well optimized."
+OPTIMIZE_ALREADY_COMPRESSED = "✅ Your original file is already efficiently compressed."
+OPTIMIZE_CHOICE_EXPIRED = "This choice has expired. Please send the file again."
+
+BTN_OPTIMIZE_SMALL = "⚡ Small"
+BTN_OPTIMIZE_BALANCED = "⚖️ Balanced"
+BTN_OPTIMIZE_HIGH = "💎 High Quality"
+BTN_OPTIMIZE_AGAIN = "🗜 Optimize Another"
+
+OPTIMIZE_UNSUPPORTED = (
+    "⚠️ I can't optimize that. Send a photo (JPEG, PNG, WEBP) or a video "
+    "(MP4, MOV, WEBM, MKV…) — as media or as a File."
+)
+OPTIMIZE_CORRUPT = (
+    "⚠️ I couldn't read this file. It may be damaged. Please try another one."
+)
+OPTIMIZE_TIMEOUT = (
+    "⏱ This file took too long to optimize. Try ⚡ Small, or a shorter video."
+)
+OPTIMIZE_VERIFY_FAILED = (
+    "⚠️ The optimized file didn't pass my checks, so I didn't send it. "
+    "Please try another preset."
+)
+OPTIMIZE_DISK_FULL = (
+    "⚠️ The server is short on disk space right now. "
+    "Please try again in a few minutes."
+)
+OPTIMIZE_SEND_FAILED = (
+    "⚠️ Telegram didn't accept the file. Please try again in a moment."
+)
+
+_KB = 1024
+_MB = 1024 * 1024
+_GB = 1024 * _MB
+
+_CODEC_NAMES = {
+    "h264": "H.264", "hevc": "HEVC", "av1": "AV1", "vp9": "VP9", "vp8": "VP8",
+    "mpeg4": "MPEG-4", "prores": "ProRes", "mjpeg": "MJPEG",
+}
+
+
+def format_size(size_bytes: int) -> str:
+    """``850 KB``, ``4.2 MB``, ``148 MB``, ``1.4 GB``."""
+    if size_bytes < _MB:
+        return f"{max(1, round(size_bytes / _KB))} KB"
+    if size_bytes < 10 * _MB:
+        return f"{size_bytes / _MB:.1f} MB"
+    if size_bytes < 1000 * _MB:
+        return f"{round(size_bytes / _MB)} MB"
+    return f"{size_bytes / _GB:.1f} GB"
+
+
+def format_clock(seconds: float) -> str:
+    """``01:42`` or ``1:02:03``."""
+    total = max(0, int(round(seconds)))
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _format_rate(frame_rate: float) -> str:
+    if abs(frame_rate - round(frame_rate)) < 0.01:
+        return f"{round(frame_rate)} fps"
+    return f"{frame_rate:.2f} fps"
+
+
+def _format_bitrate(bits_per_second: int) -> str:
+    if bits_per_second >= 1_000_000:
+        return f"{bits_per_second / 1_000_000:.1f} Mbps"
+    return f"{max(1, round(bits_per_second / 1000))} kbps"
+
+
+def video_summary(
+    *,
+    width: int,
+    height: int,
+    duration: float,
+    size_bytes: int,
+    codec: str,
+    frame_rate: float,
+    bitrate: int,
+    has_audio: bool,
+) -> str:
+    details = [_CODEC_NAMES.get(codec, codec.upper())]
+    if frame_rate:
+        details.append(_format_rate(frame_rate))
+    if bitrate:
+        details.append(_format_bitrate(bitrate))
+    details.append("with audio" if has_audio else "no audio")
+    return (
+        "🎬 <b>Video detected</b>\n"
+        f"{width}×{height} • {format_clock(duration)} • {format_size(size_bytes)}\n"
+        + " • ".join(details)
+    )
+
+
+def image_summary(*, width: int, height: int, image_format: str, size_bytes: int) -> str:
+    return (
+        "🖼 <b>Photo detected</b>\n"
+        f"{width}×{height} • {image_format.upper()} • {format_size(size_bytes)}"
+    )
+
+
+def preset_button(label: str, estimated_bytes: int | None) -> str:
+    if estimated_bytes is None:
+        return label
+    return f"{label} — ~{format_size(estimated_bytes)}"
+
+
+def optimize_progress(percent: int) -> str:
+    return f"{OPTIMIZE_PROCESSING} {percent}%"
+
+
+def optimize_done(before_bytes: int, after_bytes: int) -> str:
+    saved = max(0, round((1 - after_bytes / before_bytes) * 100)) if before_bytes else 0
+    return (
+        "✅ Optimized\n\n"
+        f"Before: {format_size(before_bytes)}\n"
+        f"After: {format_size(after_bytes)}\n"
+        f"Saved: {saved}%"
+    )
+
 # --- Metadata ---------------------------------------------------------------
 BTN_METADATA_CLEAN = "🧼 Clean Metadata"
 BTN_METADATA_CHANGE = "✏️ Change Metadata"
@@ -320,6 +464,7 @@ def stats_report(stats) -> str:
         "",
         f"🎥 Circles: {stats.circles}",
         f"🎙 Voice notes: {stats.voice_notes}",
+        f"🗜 Optimizations: {stats.optimizations}",
         f"🧹 Metadata cleans: {stats.metadata_cleans}",
         f"✏️ Metadata changes: {stats.metadata_changes}",
         f"🎭 Sticker searches: {stats.sticker_searches}",

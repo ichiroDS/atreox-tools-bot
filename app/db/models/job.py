@@ -15,6 +15,7 @@ class JobType(str, enum.Enum):
     METADATA_CLEAN = "metadata_clean"
     METADATA_CHANGE = "metadata_change"
     VOICE_NOTE = "voice_note"
+    MEDIA_OPTIMIZE = "media_optimize"
 
 
 class JobStatus(str, enum.Enum):

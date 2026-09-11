@@ -279,6 +279,67 @@ def extract_voice_source(message: Any) -> IncomingFile | None:
     return None
 
 
+OPTIMIZER_IMAGE_MIME_TYPES = frozenset(
+    {"image/jpeg", "image/jpg", "image/pjpeg", "image/png", "image/webp"}
+)
+_OPTIMIZER_IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp"})
+
+
+def _optimizer_document_kind(document: Any) -> FileKind | None:
+    mime_type = (getattr(document, "mime_type", None) or "").lower()
+    if mime_type in OPTIMIZER_IMAGE_MIME_TYPES:
+        return FileKind.IMAGE
+    if mime_type.startswith("video/"):
+        return FileKind.VIDEO
+    if mime_type in _GENERIC_MIME_TYPES:
+        extension = safe_extension(
+            getattr(document, "file_name", None),
+            default="",
+            allowed=_OPTIMIZER_IMAGE_EXTENSIONS | _VIDEO_EXTENSIONS,
+        )
+        if extension in _OPTIMIZER_IMAGE_EXTENSIONS:
+            return FileKind.IMAGE
+        if extension:
+            return FileKind.VIDEO
+    return None
+
+
+def extract_optimizer_source(message: Any) -> IncomingFile | None:
+    """A photo or video for the Media Optimizer: a File first, then native media.
+
+    Only JPEG, PNG and WEBP photos qualify (HEIC, GIF and friends do not);
+    ffprobe has the final say on what the bytes really are.
+    """
+    document = getattr(message, "document", None)
+    if document is not None:
+        kind = _optimizer_document_kind(document)
+        if kind is None:
+            return None
+        return IncomingFile(
+            file_id=document.file_id,
+            kind=kind,
+            size=getattr(document, "file_size", None),
+            original_filename=getattr(document, "file_name", None),
+            mime_type=getattr(document, "mime_type", None),
+        )
+
+    video = extract_video(message)
+    if video is not None:
+        return video
+
+    photos = getattr(message, "photo", None)
+    if photos:
+        largest = photos[-1]
+        return IncomingFile(
+            file_id=largest.file_id,
+            kind=FileKind.IMAGE,
+            size=getattr(largest, "file_size", None),
+            mime_type="image/jpeg",
+            compressed=True,
+        )
+    return None
+
+
 def extract_media(message: Any) -> IncomingFile | None:
     """Pull a photo or video out of a message, document form preferred."""
     document = getattr(message, "document", None)

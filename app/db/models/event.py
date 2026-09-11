@@ -12,6 +12,11 @@ from app.db.base import Base
 class Feature(str, enum.Enum):
     CIRCLE = "circle"
     VOICE_NOTE = "voice_note"
+    MEDIA_OPTIMIZE = "media_optimize"
+    # Which Media Optimizer preset was picked.
+    OPTIMIZE_SMALL = "optimize_small"
+    OPTIMIZE_BALANCED = "optimize_balanced"
+    OPTIMIZE_HIGH = "optimize_high"
     METADATA = "metadata"
     STICKERS = "stickers"
     HELP = "help"

@@ -1,12 +1,13 @@
 # Atreox Tools Bot
 
 A free Telegram utility bot for channel owners, creators and AI influencer
-operators. It ships four tools:
+operators. It ships five tools:
 
 | Tool | What it does |
 | --- | --- |
 | 🎥 **Video → Circle** | Turns any video into a native Telegram video note (circle). |
 | 🎙 **Voice Note** | Turns an audio file, or the sound of a video, into a native Telegram voice message. |
+| 🗜 **Media Optimizer** | Shrinks photos and videos (Small / Balanced / High Quality) and returns them as a File. |
 | 🧹 **Metadata Studio** | Cleans metadata, or rewrites device / location / capture time. |
 | 🎭 **Sticker Finder** | Discovery: six stickers, each from a *different* pack, so the user can open and add the pack they like. |
 
@@ -24,7 +25,7 @@ app/
     texts.py               every user-facing string
     callbacks.py           typed callback-data factories
     errors.py              internal failure -> friendly copy
-    routers/               start, circle, voice, metadata, stickers, admin, fallback
+    routers/               start, circle, voice, optimizer, metadata, stickers, admin, fallback
     keyboards/             built from the preset/category catalogs, not hardcoded
     states/                FSM state groups
     middlewares/           db session per update, user upsert + activity
@@ -39,6 +40,8 @@ app/
       probe.py             ffprobe wrapper (+ pure JSON parser)
       circle.py            ffmpeg circle encoder (+ pure split plan / arg builder)
       voice.py             ffmpeg OGG/Opus voice encoder (+ pure probe gate / arg builder)
+      optimizer.py         photo/video optimizer: analysis, adaptive preset plans, verify
+      image_worker.py      Pillow photo re-encoder, run as its own process
       metadata.py          ExifTool clean/change/verify (+ pure arg builders)
     stickers/
       catalog.py           configurable categories
@@ -63,7 +66,7 @@ a tool command.
 
 **Testability rule:** each native-tool integration is split into a *pure
 argument builder* (`build_circle_ffmpeg_args`, `build_voice_ffmpeg_args`,
-`build_clean_args`, `build_change_args`, `parse_probe_output`) and a thin async runner. The builders
+`build_video_args`, `plan_video`, `build_clean_args`, `build_change_args`, `parse_probe_output`) and a thin async runner. The builders
 are unit tested; the runners are covered by end-to-end tests that skip when the
 tool is absent.
 
@@ -122,6 +125,41 @@ report success. A recipient whose privacy settings refuse voice messages gets
 told how to allow them. Large files go through the same streaming fetch, job
 gate and per-job workspace as circles.
 
+### Media Optimizer
+
+The file is fetched and probed first, and the user sees what it is (size,
+resolution, duration, codec, frame rate, bitrate, audio) before choosing
+**⚡ Small / ⚖️ Balanced / 💎 High Quality**. The Bot API server keeps its copy
+between the two steps, as it does for the long-video choice.
+
+**Video** → H.264 + AAC in a faststart MP4: Small caps the short side at 720,
+Balanced and High Quality at 1080; nothing is upscaled, the aspect ratio is
+kept, rotation is applied to the pixels (no rotation tag left), frame rates
+above 60 fps are brought down to 60, silent videos stay silent, lean AAC is
+copied, surround is folded to stereo, and all container metadata is dropped.
+Presets are *adaptive*: the target bitrate follows output resolution × frame
+rate × a per-preset bits-per-pixel, and is capped at a share of what the source
+already spends. Encoding is one-pass ABR under a VBV cap, so the size shown on
+each button (`⚡ Small — ~18 MB`) is a real estimate. A preset that could not
+make the file meaningfully smaller is not offered; if none could, the user is
+told *"✅ This file is already well optimized."*
+
+**Photos** keep their format and exact pixel dimensions. JPEG is re-encoded
+progressive/optimised at a preset quality that never exceeds the source's own
+(High Quality re-uses the source's quantisation tables); EXIF is dropped except
+Orientation, and the ICC profile is kept. PNG is lossless for every preset
+(opaque alpha dropped, ≤256-colour images palettised, both verified pixel for
+pixel; 16-bit PNGs go through FFmpeg to keep every bit) and transparency always
+survives. WEBP stays lossy or lossless as it was. Photos get no size estimate -
+their compressibility depends on content. Encoding runs in a separate Pillow
+process (`image_worker.py`) so a huge decode can be killed by the timeout.
+
+Every output is probed again (container, codec, dimensions, duration, audio,
+transparency) and sent as a **File** (`disable_content_type_detection`) named
+`atreox_optimized_<name>`. A result that is not at least 2 % smaller is never
+sent: *"✅ Your original file is already efficiently compressed."* Long encodes
+update the status message at 25/50/75 %, at most every 15 s.
+
 ---
 
 ## Local development
@@ -145,8 +183,9 @@ python -m app.main
 
 | Tool | Used by | Install |
 | --- | --- | --- |
-| `ffmpeg`, `ffprobe` (with `libopus`) | Video → Circle, Voice Note | `apt install ffmpeg` / `winget install Gyan.FFmpeg` / `brew install ffmpeg` |
+| `ffmpeg`, `ffprobe` (with `libopus`, `libx264`) | Video → Circle, Voice Note, Media Optimizer | `apt install ffmpeg` / `winget install Gyan.FFmpeg` / `brew install ffmpeg` |
 | `exiftool` | Metadata Studio | `apt install libimage-exiftool-perl` / `winget install OliverBetz.ExifTool` / `brew install exiftool` |
+| Pillow (Python package) | Media Optimizer (photos) | `pip install -r requirements.txt` (wheels bundle libjpeg, zlib, libwebp) |
 
 Binaries are configurable via `FFMPEG_BIN`, `FFPROBE_BIN` and `EXIFTOOL_BIN` if
 they are not on `PATH`.
@@ -234,7 +273,7 @@ an ephemeral container filesystem is exactly right.
 | `LOG_LEVEL` | `INFO` | One of CRITICAL/ERROR/WARNING/INFO/DEBUG. |
 | `MAX_INPUT_FILE_SIZE_MB` | `2000` | Service limit for uploads. On the cloud API Telegram's 20 MB still caps it. |
 | `MAX_OUTPUT_FILE_SIZE_MB` | `1950` | Service limit for files sent back (local API hard ceiling 2000 MB; cloud 50 MB). |
-| `PROCESS_TIMEOUT_SECONDS` | `600` | Per native-tool run (one probe, one ExifTool pass, one circle segment, one voice encode). |
+| `PROCESS_TIMEOUT_SECONDS` | `600` | Per native-tool run (one probe, one ExifTool pass, one circle segment, one voice encode, one optimizer encode). |
 | `MAX_CONCURRENT_MEDIA_JOBS` | `2` | Large-file jobs at once. Small files never wait on this. |
 | `TEMP_DISK_BUDGET_MB` | `0` | Cap on total workspace reservations; `0` = free space under `TEMP_ROOT` minus 512 MB. |
 | `TEMP_ROOT` | OS temp dir (image: `/tmp/atreox-tools`) | Root of per-job workspaces. Ephemeral by design. |
@@ -433,6 +472,7 @@ tools, so everything runs there.
 | `/start`, menu, help, deep-link source capture | Working |
 | Video → Circle (probe, rotation-aware square crop, scale, H.264 encode, `sendVideoNote`) | Working; verified end-to-end against real ffmpeg |
 | Voice Note (probe gate, OGG/Opus encode + verify, `sendVoice`) | Working; verified end-to-end against real ffmpeg and aiogram's request builder |
+| Media Optimizer (analysis, adaptive presets, H.264/AAC + JPEG/PNG/WEBP, verify, `sendDocument`) | Working; verified end-to-end against real ffmpeg and Pillow |
 | Metadata: clean (ExifTool strip, keeps orientation/ICC, verifies output) | Implemented; **not yet run against real ExifTool** |
 | Metadata: change wizard (file → device → location → time of day → confirm) | FSM working; write path implemented, **not yet run against real ExifTool** |
 | Sticker Finder (categories, distinct-pack batches, More/Categories/Menu) | Logic working; **needs real `file_id`s seeded** |

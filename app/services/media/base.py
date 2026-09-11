@@ -27,6 +27,8 @@ class ProcessingErrorCode(str, enum.Enum):
     SEND_FAILED = "send_failed"
     # The recipient's privacy settings refuse voice messages from this bot.
     VOICE_FORBIDDEN = "voice_forbidden"
+    # The workspace filesystem ran out of room mid-job.
+    DISK_FULL = "disk_full"
     UNKNOWN = "unknown_error"
 
 

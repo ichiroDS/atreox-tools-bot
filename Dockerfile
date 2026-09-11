@@ -10,8 +10,8 @@ ENV PYTHONUNBUFFERED=1 \
     TEMP_ROOT=/tmp/atreox-tools
 
 # Native tools the media services shell out to (argv arrays only, no shell).
-#   ffmpeg                 -> ffmpeg + ffprobe, for Video -> Circle and
-#                             Voice Note (libopus)
+#   ffmpeg                 -> ffmpeg + ffprobe, for Video -> Circle, Voice Note
+#                             (libopus) and Media Optimizer (libx264)
 #   libimage-exiftool-perl -> exiftool, for Metadata Studio
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg libimage-exiftool-perl \
@@ -33,11 +33,14 @@ RUN useradd --create-home --uid 10001 atreox \
     && chown -R atreox:atreox ${TEMP_ROOT} /app
 USER atreox
 
-# Fail the build if either media tool went missing, or ffmpeg cannot encode
-# the Opus that Telegram voice messages require.
+# Fail the build if a media tool went missing, ffmpeg cannot encode the Opus
+# voice messages need or the H.264 the optimizer writes, or Pillow lacks the
+# JPEG/WEBP codecs the photo optimizer uses.
 RUN ffmpeg -version > /dev/null \
     && ffprobe -version > /dev/null \
     && ffmpeg -hide_banner -encoders | grep -q libopus \
+    && ffmpeg -hide_banner -encoders | grep -q libx264 \
+    && python -c "from PIL import features; assert all(map(features.check, ('jpg', 'webp', 'zlib')))" \
     && exiftool -ver > /dev/null
 
 # The entrypoint waits for the database and applies migrations, then execs the

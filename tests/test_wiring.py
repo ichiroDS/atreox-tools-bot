@@ -9,10 +9,12 @@ from app.bot.callbacks import (
     CircleCallback,
     MenuCallback,
     MetadataCallback,
+    OptimizeCallback,
     StickerCallback,
     VoiceCallback,
 )
 from app.bot.keyboards.circle import circle_done, forward_help
+from app.bot.keyboards.optimizer import optimize_done, preset_choices
 from app.bot.keyboards.voice import voice_done, voice_forward_help
 from app.bot.keyboards.common import (
     back_to_menu,
@@ -35,7 +37,14 @@ from app.bot.keyboards.metadata import (
 )
 from app.bot.keyboards.stickers import category_choices, result_controls
 from app.bot.middlewares import DbSessionMiddleware, UserMiddleware
-from app.bot.texts import BTN_CIRCLE, BTN_HELP, BTN_METADATA, BTN_STICKERS, BTN_VOICE
+from app.bot.texts import (
+    BTN_CIRCLE,
+    BTN_HELP,
+    BTN_METADATA,
+    BTN_OPTIMIZE,
+    BTN_STICKERS,
+    BTN_VOICE,
+)
 from app.config import Settings
 from app.data.device_presets import (
     DEVICE_PRESETS,
@@ -59,7 +68,9 @@ def test_dispatcher_wires_every_flow_with_the_fallback_last(clean_env):
 
     root = dispatcher.sub_routers[0]
     names = [r.name for r in root.sub_routers]
-    assert names == ["start", "circle", "voice", "metadata", "stickers", "admin", "fallback"]
+    assert names == [
+        "start", "circle", "voice", "optimizer", "metadata", "stickers", "admin", "fallback",
+    ]
     installed = {type(m) for m in dispatcher.update.outer_middleware}
     assert {DbSessionMiddleware, UserMiddleware} <= installed
 
@@ -75,6 +86,7 @@ def test_main_menu_lists_the_tools_growth_and_help():
     assert labels == [
         BTN_CIRCLE,
         BTN_VOICE,
+        BTN_OPTIMIZE,
         BTN_METADATA,
         BTN_STICKERS,
         texts.BTN_GROW,
@@ -141,6 +153,8 @@ def test_public_command_menu_hides_the_admin_command():
         forward_help(),
         voice_done(),
         voice_forward_help(),
+        preset_choices(["small", "balanced", "high"], {"small": 18 * 1024 * 1024}),
+        optimize_done(),
         metadata_menu(),
         clean_done_choices(),
         change_done_choices(),
@@ -284,6 +298,8 @@ def test_sticker_keyboard_covers_every_configured_category():
         (CircleCallback, {"action": "guide_android"}),
         (MenuCallback, {"action": "voice"}),
         (VoiceCallback, {"action": "forward_help"}),
+        (MenuCallback, {"action": "optimize"}),
+        (OptimizeCallback, {"action": "preset", "value": "balanced"}),
         (MetadataCallback, {"action": "device", "value": "iphone_16_pro_max"}),
         (MetadataCallback, {"action": "gen", "value": "16"}),
         (MetadataCallback, {"action": "city", "value": "los_angeles"}),
