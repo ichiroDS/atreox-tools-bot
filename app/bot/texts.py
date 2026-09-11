@@ -234,6 +234,10 @@ OPTIMIZE_DISK_FULL = (
     "⚠️ The server is short on disk space right now. "
     "Please try again in a few minutes."
 )
+OPTIMIZE_OUT_OF_MEMORY = (
+    "⚠️ This file needed more memory than the server could spare. "
+    "Please try again in a few minutes."
+)
 OPTIMIZE_SEND_FAILED = (
     "⚠️ Telegram didn't accept the file. Please try again in a moment."
 )

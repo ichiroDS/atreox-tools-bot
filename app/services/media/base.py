@@ -29,6 +29,8 @@ class ProcessingErrorCode(str, enum.Enum):
     VOICE_FORBIDDEN = "voice_forbidden"
     # The workspace filesystem ran out of room mid-job.
     DISK_FULL = "disk_full"
+    # A tool was killed from outside (SIGKILL) - in a container, the OOM killer.
+    PROCESS_KILLED = "process_killed"
     UNKNOWN = "unknown_error"
 
 

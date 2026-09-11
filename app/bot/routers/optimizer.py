@@ -87,6 +87,7 @@ _FAILURE_TEXTS: dict[ProcessingErrorCode, str] = {
     ProcessingErrorCode.TIMEOUT: texts.OPTIMIZE_TIMEOUT,
     ProcessingErrorCode.VERIFY_FAILED: texts.OPTIMIZE_VERIFY_FAILED,
     ProcessingErrorCode.DISK_FULL: texts.OPTIMIZE_DISK_FULL,
+    ProcessingErrorCode.PROCESS_KILLED: texts.OPTIMIZE_OUT_OF_MEMORY,
     ProcessingErrorCode.SEND_FAILED: texts.OPTIMIZE_SEND_FAILED,
 }
 

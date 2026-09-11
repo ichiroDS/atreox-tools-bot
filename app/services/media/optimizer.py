@@ -24,6 +24,7 @@ from __future__ import annotations
 import enum
 import json
 import logging
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,6 +68,35 @@ _DEEP_PNG_PIX_FMTS = frozenset({"rgb48be", "rgb48le", "rgba64be", "rgba64le", "y
 
 # Frame rates above this are slow-motion captures; they are brought down to it.
 MAX_FRAME_RATE = 60.0
+
+# --- memory budget ------------------------------------------------------------
+# The bot runs in a small container (Railway: 1 GB, 2 vCPU). FFmpeg sizes its
+# thread pools from the CPUs it can *see* - the host's, not the container's
+# quota - and every decoder and encoder thread holds frames of its own. Left
+# automatic, a 2160x3840 60 fps source peaked at 1-1.7 GB and the kernel killed
+# the encode (rc -9). So threads and x264's lookahead are explicit, sized from
+# measurements of ffmpeg's peak RSS on exactly that source:
+#   automatic threads            967-1662 MB
+#   2 threads, lookahead 10       ~340 MB (High), ~220 MB (Small)
+# which keeps two concurrent heavy jobs plus the bot itself under 1 GB.
+MAX_ENCODE_THREADS = 2
+# Output frames x264 buffers for rate control; the "fast" preset's default of
+# 30 alone cost ~140 MB at 1080p.
+RC_LOOKAHEAD = 10
+# Past 4K a decoded frame is 50 MB+: one decode thread keeps 8K at ~450 MB
+# (two threads: ~600 MB).
+_SINGLE_THREAD_ABOVE_PIXELS = 4096 * 2304
+# Largest video frame accepted at all (8K DCI).
+MAX_VIDEO_PIXELS = 8192 * 4320
+# Largest photo per format, from the encoder's measured peak memory, each kept
+# near 400 MB or less:
+#   JPEG  ~4 B/px (baseline past 24 MP)   50 MP -> ~210 MB
+#   PNG   ~5 B/px                         50 MP -> ~250 MB
+#   WEBP  ~24 B/px (libwebp's buffers)    16 MP -> ~390 MB
+# Kept equal to image_worker.MAX_PIXELS, which enforces them again.
+IMAGE_PIXEL_LIMITS = {"jpeg": 50_000_000, "png": 50_000_000, "webp": 16_000_000}
+# 16-bit PNG goes through FFmpeg at ~26 B/px: 12 MP -> ~315 MB.
+DEEP_PNG_PIXEL_LIMIT = 12_000_000
 # MP4 box overhead, roughly, on top of the audio and video payload.
 _CONTAINER_OVERHEAD = 1.015
 # A preset whose estimate is not at least this much smaller than the source
@@ -231,10 +261,16 @@ def _image_analysis(visual: Sequence[dict[str, Any]], size_bytes: int) -> ImageA
     width, height = int(stream.get("width") or 0), int(stream.get("height") or 0)
     if width <= 0 or height <= 0:
         raise MediaProcessingError(ProcessingErrorCode.PROBE_FAILED, "missing dimensions")
-    return ImageAnalysis(
+    analysis = ImageAnalysis(
         size_bytes=size_bytes, width=width, height=height, format=image_format,
         pix_fmt=str(stream.get("pix_fmt") or ""),
     )
+    limit = DEEP_PNG_PIXEL_LIMIT if analysis.deep_png else IMAGE_PIXEL_LIMITS[image_format]
+    if width * height > limit:
+        raise MediaProcessingError(
+            ProcessingErrorCode.TOO_LARGE, f"{width}x{height} exceeds the {image_format} pixel budget"
+        )
+    return analysis
 
 
 def _display_size(stream: dict[str, Any], rotation: int) -> tuple[int, int]:
@@ -258,6 +294,10 @@ def _video_analysis(
     width, height = _display_size(video, rotation)
     if width <= 0 or height <= 0:
         raise MediaProcessingError(ProcessingErrorCode.PROBE_FAILED, "missing dimensions")
+    if width * height > MAX_VIDEO_PIXELS:
+        raise MediaProcessingError(
+            ProcessingErrorCode.TOO_LARGE, f"{width}x{height} exceeds the video pixel budget"
+        )
 
     duration = _number(fmt.get("duration")) or _number(video.get("duration"))
     audio = next((s for s in streams if s.get("codec_type") == "audio" and s.get("codec_name")), None)
@@ -315,6 +355,15 @@ class VideoPlan:
     audio: AudioPlan | None
     estimated_bytes: int | None
     worthwhile: bool
+    # Decoder, filter and encoder threads - see "memory budget" above.
+    threads: int = 1
+
+
+def encode_threads(width: int, height: int, cpus: int | None = None) -> int:
+    """Threads for one encode: never more than the budget, one past 4K."""
+    if width * height > _SINGLE_THREAD_ABOVE_PIXELS:
+        return 1
+    return max(1, min(cpus or os.cpu_count() or 1, MAX_ENCODE_THREADS))
 
 
 def _even(value: float) -> int:
@@ -354,7 +403,7 @@ def plan_audio(analysis: VideoAnalysis, profile: PresetProfile) -> AudioPlan | N
     return AudioPlan(copy=False, bitrate=bitrate, downmix=channels > 2)
 
 
-def plan_video(analysis: VideoAnalysis, preset: Preset) -> VideoPlan:
+def plan_video(analysis: VideoAnalysis, preset: Preset, *, cpus: int | None = None) -> VideoPlan:
     profile = PROFILES[preset]
     width, height = output_size(analysis.width, analysis.height, profile.max_short_side)
     pixel_rate = width * height * 30 * _rate_factor(analysis.frame_rate)
@@ -384,6 +433,7 @@ def plan_video(analysis: VideoAnalysis, preset: Preset) -> VideoPlan:
         audio=audio,
         estimated_bytes=estimated,
         worthwhile=worthwhile,
+        threads=encode_threads(analysis.width, analysis.height, cpus),
     )
 
 
@@ -410,9 +460,12 @@ def build_video_args(
         filters.append(f"fps={plan.frame_rate_cap:g}")
     filters.append("format=yuv420p")
 
+    threads = str(plan.threads)
     args = [
         ffmpeg_bin, "-y", "-hide_banner", "-nostdin",
         "-loglevel", "error", "-nostats", "-progress", "pipe:1",
+        # Before -i: the decoder's threads (and so its frame buffers).
+        "-threads", threads,
         "-i", str(source),
         "-map", f"0:{analysis.video_stream}",
     ]
@@ -422,9 +475,13 @@ def build_video_args(
         "-sn", "-dn",
         "-map_metadata", "-1",
         "-map_chapters", "-1",
+        "-filter_threads", threads,
         "-vf", ",".join(filters),
         "-c:v", "libx264",
         "-preset", PROFILES[plan.preset].x264_preset,
+        # After -i: the encoders' threads.
+        "-threads", threads,
+        "-rc-lookahead", str(RC_LOOKAHEAD),
         "-profile:v", "high",
         "-b:v", str(plan.video_bitrate),
         "-maxrate", str(plan.maxrate),
@@ -532,7 +589,13 @@ def verify_image(output: dict[str, Any], analysis: ImageAnalysis) -> None:
         fail("transparency was lost")
 
 
-def classify_failure(stderr: str) -> ProcessingErrorCode:
+_KILLED_RETURN_CODES = (-9, 137)  # SIGKILL, as asyncio and as a shell report it
+
+
+def classify_failure(stderr: str, returncode: int | None = None) -> ProcessingErrorCode:
+    if returncode in _KILLED_RETURN_CODES:
+        # Nothing on stderr: the process never got to say anything.
+        return ProcessingErrorCode.PROCESS_KILLED
     text = (stderr or "").lower()
     if any(marker in text for marker in _NO_SPACE_MARKERS):
         return ProcessingErrorCode.DISK_FULL
@@ -600,6 +663,11 @@ class MediaOptimizerService:
         plan = plan_video(analysis, preset)
         destination = workspace.new_file(".mp4", prefix="opt_")
         args = build_video_args(self._ffmpeg_bin, source, destination, analysis, plan)
+        logger.info(
+            "optimizer encode preset=%s %dx%d -> %dx%d threads=%d lookahead=%d",
+            preset.value, analysis.width, analysis.height, plan.width, plan.height,
+            plan.threads, RC_LOOKAHEAD, extra={"job_id": job_id or "-"},
+        )
         await self._run_ffmpeg(args, analysis.duration, job_id, on_progress)
         self._ensure_written(destination)
 
@@ -628,7 +696,8 @@ class MediaOptimizerService:
             raise MediaProcessingError(ProcessingErrorCode.TIMEOUT, str(exc)) from exc
         except CommandFailed as exc:
             code = _WORKER_EXIT_CODES.get(exc.returncode) if not analysis.deep_png else None
-            raise MediaProcessingError(code or classify_failure(exc.stderr), str(exc)) from exc
+            code = code or classify_failure(exc.stderr, exc.returncode)
+            raise MediaProcessingError(code, str(exc)) from exc
         self._ensure_written(destination)
 
         verify_image(json.loads(await self._probe(destination, job_id=job_id)), analysis)
@@ -655,7 +724,7 @@ class MediaOptimizerService:
         except CommandTimeout as exc:
             raise MediaProcessingError(ProcessingErrorCode.TIMEOUT, str(exc)) from exc
         except CommandFailed as exc:
-            raise MediaProcessingError(classify_failure(exc.stderr), str(exc)) from exc
+            raise MediaProcessingError(classify_failure(exc.stderr, exc.returncode), str(exc)) from exc
 
     @staticmethod
     def _ensure_written(destination: Path) -> None:

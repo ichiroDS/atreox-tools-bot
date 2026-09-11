@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import sys
+import warnings
 from pathlib import Path
 
 from PIL import Image, ImageChops, JpegImagePlugin, UnidentifiedImageError
@@ -28,9 +29,19 @@ EXIT_UNSUPPORTED = 2
 EXIT_TOO_LARGE = 3
 EXIT_CORRUPT = 4
 
-# ~150 MP: well past any phone camera, while a decode stays within a few
-# hundred MB. Pillow raises beyond this instead of allocating.
-MAX_PIXELS = 150_000_000
+# Largest image per format, so one encode stays near 400 MB inside the bot's
+# 1 GB container (measured: JPEG ~4, PNG ~5, WEBP ~24 bytes per pixel).
+# Checked from the header, before anything is decoded. Kept equal to
+# optimizer.IMAGE_PIXEL_LIMITS, which refuses such files at analysis already.
+MAX_PIXELS = {"jpeg": 50_000_000, "png": 50_000_000, "webp": 16_000_000}
+
+
+class TooManyPixels(Exception):
+    pass
+
+
+# Largest JPEG written optimised/progressive; see _save_jpeg.
+BUFFERED_JPEG_PIXELS = 24_000_000
 
 ORIENTATION_TAG = 0x0112
 
@@ -105,7 +116,13 @@ def _save_jpeg(image: Image.Image, destination: Path, preset: str) -> dict:
         subsampling = 2
     if quality == "keep" and not getattr(image, "quantization", None):
         quality = 90
-    options = dict(quality=quality, subsampling=subsampling, optimize=True, progressive=True)
+    # Optimised Huffman tables and progressive scans make libjpeg buffer every
+    # coefficient of the image (~5 bytes/pixel on top of the decoded pixels):
+    # 50 MP peaked at ~440 MB. Past this size a baseline JPEG is written
+    # instead, streamed row by row.
+    buffered = image.width * image.height <= BUFFERED_JPEG_PIXELS
+    options = dict(quality=quality, subsampling=subsampling, optimize=buffered,
+                   progressive=buffered)
     exif = _orientation_only_exif(image)
     if exif:
         options["exif"] = exif
@@ -125,16 +142,20 @@ def _exact_palette(image: Image.Image) -> Image.Image | None:
     colours = image.getcolors(256)
     if colours is None:
         return None
-    rgb = image.convert("RGB")
     palette = Image.new("P", (1, 1))
     flat: list[int] = []
     for _, colour in colours:
         flat.extend(colour)
     palette.putpalette(flat + [0] * (768 - len(flat)))
-    candidate = rgb.quantize(palette=palette, dither=Image.Dither.NONE)
-    if ImageChops.difference(candidate.convert("RGB"), rgb).getbbox() is not None:
+    # Mapping a pixel to a palette index depends only on its colour, so it is
+    # proven exact on a 1xN strip of the distinct colours - not by diffing
+    # full-size copies (which cost ~600 MB at 48 MP).
+    strip = Image.new("RGB", (len(colours), 1))
+    strip.putdata([colour for _, colour in colours])
+    mapped = strip.quantize(palette=palette, dither=Image.Dither.NONE)
+    if mapped.tobytes() != bytes(range(len(colours))):
         return None
-    return candidate
+    return image.quantize(palette=palette, dither=Image.Dither.NONE)
 
 
 def _png_bit_depth(path: Path) -> int:
@@ -178,7 +199,8 @@ def _save_webp(image: Image.Image, source: Path, destination: Path, preset: str)
         # fidelity; the top settings cost many times the time for ~1%.
         options: dict = dict(lossless=True, quality=80, method=4, exact=True)
     else:
-        options = dict(quality=WEBP_QUALITY[preset], method=6)
+        # Method 4 halves the time of 6 at the same memory and near-same size.
+        options = dict(quality=WEBP_QUALITY[preset], method=4)
     if image.info.get("icc_profile"):
         options["icc_profile"] = image.info["icc_profile"]
     image.save(destination, "WEBP", **options)
@@ -186,8 +208,13 @@ def _save_webp(image: Image.Image, source: Path, destination: Path, preset: str)
 
 
 def optimize(source: Path, destination: Path, fmt: str, preset: str) -> dict:
-    Image.MAX_IMAGE_PIXELS = MAX_PIXELS
+    # Pillow only *raises* at twice MAX_IMAGE_PIXELS (it merely warns at 1x),
+    # so the budget is enforced explicitly below; this is the backstop.
+    Image.MAX_IMAGE_PIXELS = max(MAX_PIXELS.values())
+    warnings.simplefilter("ignore", Image.DecompressionBombWarning)
     with Image.open(source) as image:
+        if image.width * image.height > MAX_PIXELS.get(fmt, 0):
+            raise TooManyPixels(f"{image.width}x{image.height}")
         if getattr(image, "n_frames", 1) > 1:
             raise Unsupported("animated image")
         expected = {"jpeg": "JPEG", "png": "PNG", "webp": "WEBP"}[fmt]
@@ -218,7 +245,7 @@ def main(argv: list[str]) -> int:
     except Unsupported as exc:
         print(f"unsupported: {exc}", file=sys.stderr)
         return EXIT_UNSUPPORTED
-    except Image.DecompressionBombError as exc:
+    except (TooManyPixels, Image.DecompressionBombError) as exc:
         print(f"too many pixels: {exc}", file=sys.stderr)
         return EXIT_TOO_LARGE
     except (UnidentifiedImageError, OSError, SyntaxError, ValueError) as exc:
