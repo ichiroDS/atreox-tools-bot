@@ -29,7 +29,12 @@ from urllib.parse import quote
 import aiofiles
 
 from app.services.media.base import MediaProcessingError, ProcessingErrorCode
-from app.utils.temp_files import JobWorkspace, safe_display_name, safe_extension
+from app.utils.temp_files import (
+    AUDIO_EXTENSIONS,
+    JobWorkspace,
+    safe_display_name,
+    safe_extension,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +61,11 @@ IMAGE_MIME_TYPES = frozenset(
     }
 )
 
+# Telegram labels some perfectly good media files (.opus, .flac, .mkv) with a
+# generic type; for those the file name is the only hint.
+_GENERIC_MIME_TYPES = frozenset({"", "application/octet-stream"})
+_VIDEO_EXTENSIONS = frozenset({".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".3gp"})
+
 # Written to disk a megabyte at a time: large enough to be efficient, small
 # enough that a multi-GB file never occupies meaningful memory.
 CHUNK_SIZE = 1024 * 1024
@@ -79,6 +89,7 @@ def transfer_timeout(size_bytes: int | None) -> int:
 class FileKind(str, enum.Enum):
     VIDEO = "video"
     IMAGE = "image"
+    AUDIO = "audio"
 
 
 class FileTooLargeError(Exception):
@@ -119,6 +130,10 @@ class IncomingFile:
 
     @property
     def extension(self) -> str:
+        if self.kind is FileKind.AUDIO:
+            # FFmpeg identifies audio by its content; a known extension only
+            # helps it along.
+            return safe_extension(self.original_filename, allowed=AUDIO_EXTENSIONS)
         default = ".mp4" if self.kind is FileKind.VIDEO else ".jpg"
         return safe_extension(self.original_filename, default=default)
 
@@ -199,6 +214,68 @@ def extract_video(message: Any) -> IncomingFile | None:
             original_filename=getattr(document, "file_name", None),
             mime_type=getattr(document, "mime_type", None),
         )
+    return None
+
+
+def _voice_document_kind(document: Any) -> FileKind | None:
+    """Which documents can feed a voice note: anything audio, or a video."""
+    mime_type = (getattr(document, "mime_type", None) or "").lower()
+    if mime_type.startswith("audio/") or mime_type == "application/ogg":
+        return FileKind.AUDIO
+    if mime_type.startswith("video/"):
+        return FileKind.VIDEO
+    if mime_type in _GENERIC_MIME_TYPES:
+        extension = safe_extension(
+            getattr(document, "file_name", None),
+            default="",
+            allowed=AUDIO_EXTENSIONS | _VIDEO_EXTENSIONS,
+        )
+        if extension in AUDIO_EXTENSIONS:
+            return FileKind.AUDIO
+        if extension:
+            return FileKind.VIDEO
+    return None
+
+
+# Native media a voice note can be made from, checked in this order.
+_VOICE_SOURCE_ATTRIBUTES = (
+    ("audio", FileKind.AUDIO),
+    ("voice", FileKind.AUDIO),
+    ("video", FileKind.VIDEO),
+    ("video_note", FileKind.VIDEO),
+)
+
+
+def extract_voice_source(message: Any) -> IncomingFile | None:
+    """Pull audio or video out of a message: native media or a document.
+
+    This is only a first filter. What the file really contains is decided by
+    ffprobe once it is on disk.
+    """
+    for attribute, kind in _VOICE_SOURCE_ATTRIBUTES:
+        media = getattr(message, attribute, None)
+        if media is not None:
+            return IncomingFile(
+                file_id=media.file_id,
+                kind=kind,
+                size=getattr(media, "file_size", None),
+                original_filename=getattr(media, "file_name", None),
+                mime_type=getattr(media, "mime_type", None),
+                compressed=attribute in ("video", "video_note"),
+                duration=_declared_duration(media),
+            )
+
+    document = getattr(message, "document", None)
+    if document is not None:
+        kind = _voice_document_kind(document)
+        if kind is not None:
+            return IncomingFile(
+                file_id=document.file_id,
+                kind=kind,
+                size=getattr(document, "file_size", None),
+                original_filename=getattr(document, "file_name", None),
+                mime_type=getattr(document, "mime_type", None),
+            )
     return None
 
 

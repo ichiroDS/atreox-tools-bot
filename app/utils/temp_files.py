@@ -28,11 +28,24 @@ _ALLOWED_EXTENSIONS = frozenset(
         ".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".3gp",
     }
 )
+# Audio sources (Voice Note only). Kept apart from the list above so a photo or
+# video job can never end up with an audio extension on disk.
+AUDIO_EXTENSIONS = frozenset(
+    {
+        ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".oga", ".opus", ".flac",
+        ".wma", ".aif", ".aiff", ".amr", ".caf", ".mka", ".weba", ".wv", ".ac3",
+    }
+)
 _EXTENSION_RE = re.compile(r"^\.[A-Za-z0-9]{1,8}$")
 _FALLBACK_EXTENSION = ".bin"
 
 
-def safe_extension(original_filename: str | None, default: str = _FALLBACK_EXTENSION) -> str:
+def safe_extension(
+    original_filename: str | None,
+    default: str = _FALLBACK_EXTENSION,
+    *,
+    allowed: frozenset[str] = _ALLOWED_EXTENSIONS,
+) -> str:
     """Return a safe, lowercase extension derived from an untrusted filename."""
     if not original_filename:
         return default
@@ -42,7 +55,7 @@ def safe_extension(original_filename: str | None, default: str = _FALLBACK_EXTEN
     if "." not in basename:
         return default
     ext = "." + basename.rsplit(".", 1)[-1].lower()
-    if not _EXTENSION_RE.match(ext) or ext not in _ALLOWED_EXTENSIONS:
+    if not _EXTENSION_RE.match(ext) or ext not in allowed:
         return default
     return ext
 

@@ -21,7 +21,12 @@ class ProcessingErrorCode(str, enum.Enum):
     METADATA_FAILED = "metadata_failed"
     VERIFY_FAILED = "verify_failed"
     EMPTY_OUTPUT = "empty_output"
+    NO_AUDIO = "no_audio"
+    # The file looked like media, but its audio cannot be decoded.
+    CORRUPT_INPUT = "corrupt_input"
     SEND_FAILED = "send_failed"
+    # The recipient's privacy settings refuse voice messages from this bot.
+    VOICE_FORBIDDEN = "voice_forbidden"
     UNKNOWN = "unknown_error"
 
 

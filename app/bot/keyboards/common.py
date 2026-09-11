@@ -12,6 +12,7 @@ from app.bot.callbacks import MenuCallback
 def main_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=texts.BTN_CIRCLE, callback_data=MenuCallback(action="circle"))
+    builder.button(text=texts.BTN_VOICE, callback_data=MenuCallback(action="voice"))
     builder.button(text=texts.BTN_METADATA, callback_data=MenuCallback(action="metadata"))
     builder.button(text=texts.BTN_STICKERS, callback_data=MenuCallback(action="stickers"))
     # A direct link: one tap to the site, as intended for the menu entry.

@@ -29,6 +29,7 @@ class Stats:
     users: Window = field(default_factory=Window)
     jobs: Window = field(default_factory=Window)
     circles: int = 0
+    voice_notes: int = 0
     metadata_cleans: int = 0
     metadata_changes: int = 0
     sticker_searches: int = 0
@@ -87,6 +88,7 @@ class StatsRepository:
             users=users,
             jobs=jobs,
             circles=await successful(JobType.CIRCLE),
+            voice_notes=await successful(JobType.VOICE_NOTE),
             metadata_cleans=await successful(JobType.METADATA_CLEAN),
             metadata_changes=await successful(JobType.METADATA_CHANGE),
             sticker_searches=await events(Feature.STICKERS),

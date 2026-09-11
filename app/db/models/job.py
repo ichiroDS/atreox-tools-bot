@@ -14,6 +14,7 @@ class JobType(str, enum.Enum):
     CIRCLE = "circle"
     METADATA_CLEAN = "metadata_clean"
     METADATA_CHANGE = "metadata_change"
+    VOICE_NOTE = "voice_note"
 
 
 class JobStatus(str, enum.Enum):

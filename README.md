@@ -1,11 +1,12 @@
 # Atreox Tools Bot
 
 A free Telegram utility bot for channel owners, creators and AI influencer
-operators. V1 ships exactly three tools:
+operators. It ships four tools:
 
 | Tool | What it does |
 | --- | --- |
 | 🎥 **Video → Circle** | Turns any video into a native Telegram video note (circle). |
+| 🎙 **Voice Note** | Turns an audio file, or the sound of a video, into a native Telegram voice message. |
 | 🧹 **Metadata Studio** | Cleans metadata, or rewrites device / location / capture time. |
 | 🎭 **Sticker Finder** | Discovery: six stickers, each from a *different* pack, so the user can open and add the pack they like. |
 
@@ -23,7 +24,7 @@ app/
     texts.py               every user-facing string
     callbacks.py           typed callback-data factories
     errors.py              internal failure -> friendly copy
-    routers/               start, circle, metadata, stickers, admin, fallback
+    routers/               start, circle, voice, metadata, stickers, admin, fallback
     keyboards/             built from the preset/category catalogs, not hardcoded
     states/                FSM state groups
     middlewares/           db session per update, user upsert + activity
@@ -37,6 +38,7 @@ app/
       base.py              MediaInfo, ProcessedFile, ProcessingErrorCode
       probe.py             ffprobe wrapper (+ pure JSON parser)
       circle.py            ffmpeg circle encoder (+ pure split plan / arg builder)
+      voice.py             ffmpeg OGG/Opus voice encoder (+ pure probe gate / arg builder)
       metadata.py          ExifTool clean/change/verify (+ pure arg builders)
     stickers/
       catalog.py           configurable categories
@@ -60,8 +62,8 @@ and the media services own every ffmpeg/ExifTool argument. A router never builds
 a tool command.
 
 **Testability rule:** each native-tool integration is split into a *pure
-argument builder* (`build_circle_ffmpeg_args`, `build_clean_args`,
-`build_change_args`, `parse_probe_output`) and a thin async runner. The builders
+argument builder* (`build_circle_ffmpeg_args`, `build_voice_ffmpeg_args`,
+`build_clean_args`, `build_change_args`, `parse_probe_output`) and a thin async runner. The builders
 are unit tested; the runners are covered by end-to-end tests that skip when the
 tool is absent.
 
@@ -102,6 +104,24 @@ is encoded straight from the source with an accurate input seek, sent with
 intermediate encode on disk. Container slop under 0.5 s past a boundary does
 not produce a sliver of a circle.
 
+### Audio / video → voice notes
+
+🎙 Voice Note accepts audio (MP3, WAV, M4A, AAC, OGG, FLAC, Opus, …) and video
+(MP4, MOV, WebM, MKV, …), as native media or as a File. ffprobe decides what the
+file really is: only an allowlist of demuxers is accepted (a playlist, image or
+text file is refused before FFmpeg decodes anything), and a video with no audio
+track is answered with *"🔇 This video doesn't contain an audio track."*.
+
+The first audio stream is encoded to **OGG/Opus, mono, 48 kHz, 48 kbit/s,
+`-application voip`** - speech-tuned, but with no filter that changes pitch,
+tempo or loudness. The result is probed again (container `ogg`, codec `opus`,
+non-zero duration) and sent with **`sendVoice`** as `voice.ogg`, so Telegram
+renders the native waveform bubble. If Telegram ever returns anything other
+than a voice message, that message is deleted and the job fails rather than
+report success. A recipient whose privacy settings refuse voice messages gets
+told how to allow them. Large files go through the same streaming fetch, job
+gate and per-job workspace as circles.
+
 ---
 
 ## Local development
@@ -125,7 +145,7 @@ python -m app.main
 
 | Tool | Used by | Install |
 | --- | --- | --- |
-| `ffmpeg`, `ffprobe` | Video → Circle | `apt install ffmpeg` / `winget install Gyan.FFmpeg` / `brew install ffmpeg` |
+| `ffmpeg`, `ffprobe` (with `libopus`) | Video → Circle, Voice Note | `apt install ffmpeg` / `winget install Gyan.FFmpeg` / `brew install ffmpeg` |
 | `exiftool` | Metadata Studio | `apt install libimage-exiftool-perl` / `winget install OliverBetz.ExifTool` / `brew install exiftool` |
 
 Binaries are configurable via `FFMPEG_BIN`, `FFPROBE_BIN` and `EXIFTOOL_BIN` if
@@ -214,7 +234,7 @@ an ephemeral container filesystem is exactly right.
 | `LOG_LEVEL` | `INFO` | One of CRITICAL/ERROR/WARNING/INFO/DEBUG. |
 | `MAX_INPUT_FILE_SIZE_MB` | `2000` | Service limit for uploads. On the cloud API Telegram's 20 MB still caps it. |
 | `MAX_OUTPUT_FILE_SIZE_MB` | `1950` | Service limit for files sent back (local API hard ceiling 2000 MB; cloud 50 MB). |
-| `PROCESS_TIMEOUT_SECONDS` | `600` | Per native-tool run (one probe, one ExifTool pass, one circle segment). |
+| `PROCESS_TIMEOUT_SECONDS` | `600` | Per native-tool run (one probe, one ExifTool pass, one circle segment, one voice encode). |
 | `MAX_CONCURRENT_MEDIA_JOBS` | `2` | Large-file jobs at once. Small files never wait on this. |
 | `TEMP_DISK_BUDGET_MB` | `0` | Cap on total workspace reservations; `0` = free space under `TEMP_ROOT` minus 512 MB. |
 | `TEMP_ROOT` | OS temp dir (image: `/tmp/atreox-tools`) | Root of per-job workspaces. Ephemeral by design. |
@@ -412,6 +432,7 @@ tools, so everything runs there.
 | --- | --- |
 | `/start`, menu, help, deep-link source capture | Working |
 | Video → Circle (probe, rotation-aware square crop, scale, H.264 encode, `sendVideoNote`) | Working; verified end-to-end against real ffmpeg |
+| Voice Note (probe gate, OGG/Opus encode + verify, `sendVoice`) | Working; verified end-to-end against real ffmpeg and aiogram's request builder |
 | Metadata: clean (ExifTool strip, keeps orientation/ICC, verifies output) | Implemented; **not yet run against real ExifTool** |
 | Metadata: change wizard (file → device → location → time of day → confirm) | FSM working; write path implemented, **not yet run against real ExifTool** |
 | Sticker Finder (categories, distinct-pack batches, More/Categories/Menu) | Logic working; **needs real `file_id`s seeded** |

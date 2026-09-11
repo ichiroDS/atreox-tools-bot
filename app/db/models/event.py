@@ -11,6 +11,7 @@ from app.db.base import Base
 
 class Feature(str, enum.Enum):
     CIRCLE = "circle"
+    VOICE_NOTE = "voice_note"
     METADATA = "metadata"
     STICKERS = "stickers"
     HELP = "help"

@@ -71,3 +71,13 @@ async def send_media(bot: Any, method: Any, *, size_bytes: int) -> Any:
             logger.info("flood wait %ss before resending", exc.retry_after)
             await asyncio.sleep(exc.retry_after)
     return None  # pragma: no cover - loop always returns or raises
+
+
+async def delete_quietly(message: Any) -> None:
+    """Remove a status message; a refusal must never fail the job."""
+    if message is None:
+        return
+    try:
+        await message.delete()
+    except Exception:  # noqa: BLE001 - deletion is best effort
+        pass

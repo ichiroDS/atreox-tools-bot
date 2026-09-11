@@ -1,6 +1,6 @@
 from aiogram import Router
 
-from app.bot.routers import admin, circle, fallback, metadata, start, stickers
+from app.bot.routers import admin, circle, fallback, metadata, start, stickers, voice
 
 
 def build_root_router() -> Router:
@@ -13,6 +13,7 @@ def build_root_router() -> Router:
     root = Router(name="root")
     root.include_router(start.router)
     root.include_router(circle.router)
+    root.include_router(voice.router)
     root.include_router(metadata.router)
     root.include_router(stickers.router)
     root.include_router(admin.router)

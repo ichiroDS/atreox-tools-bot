@@ -7,6 +7,7 @@ ATREOX_URL = "https://atreoxai.com"
 
 # --- Menu -------------------------------------------------------------------
 BTN_CIRCLE = "\U0001f3a5 Video \u2192 Circle"
+BTN_VOICE = "\U0001f399 Voice Note"
 BTN_METADATA = "\U0001f9f9 Metadata Studio"
 BTN_STICKERS = "\U0001f3ad Find Stickers"
 BTN_GROW = "\U0001f680 Grow My Channel"
@@ -33,6 +34,9 @@ HELP = (
     "\u2139\ufe0f <b>Atreox Tools</b>\n\n"
     "\U0001f3a5 <b>Video \u2192 Circle</b>\n"
     "Turns a regular video into a native Telegram video circle.\n\n"
+    "🎙 <b>Voice Note</b>\n"
+    "Turns audio or the audio track from a video into a native Telegram voice "
+    "message.\n\n"
     "\U0001f9f9 <b>Metadata Studio</b>\n"
     "Clean metadata or apply a custom content profile to media.\n\n"
     "\U0001f3ad <b>Find Stickers</b>\n"
@@ -126,23 +130,62 @@ BTN_GUIDE_ANDROID = "🤖 Android"
 
 # The steps are identical on every platform today. They live in one place so a
 # platform guide can diverge (or gain a GIF) without touching the others.
-_FORWARD_HELP_STEPS = (
-    "1. Press and hold the circle → Forward\n"
-    "2. Select the chat/channel\n"
-    "3. Open Message Settings / Forwarding Options\n"
-    "4. Choose Hide Sender Name\n"
-    "5. Send\n\n"
-    "The exact wording may differ slightly between iOS, Android and Desktop."
-)
+def _forward_help_steps(item: str) -> str:
+    return (
+        f"1. Press and hold the {item} → Forward\n"
+        "2. Select the chat/channel\n"
+        "3. Open Message Settings / Forwarding Options\n"
+        "4. Choose Hide Sender Name\n"
+        "5. Send\n\n"
+        "The exact wording may differ slightly between iOS, Android and Desktop."
+    )
 
-CIRCLE_FORWARD_HELP = (
-    "🤖 <b>How to hide the bot name when forwarding</b>\n\n"
-    + _FORWARD_HELP_STEPS
-)
+
+_FORWARD_HELP_TITLE = "🤖 <b>How to hide the bot name when forwarding</b>\n\n"
+_FORWARD_HELP_STEPS = _forward_help_steps("circle")
+
+CIRCLE_FORWARD_HELP = _FORWARD_HELP_TITLE + _FORWARD_HELP_STEPS
 CIRCLE_FORWARD_HELP_IOS = "🍎 <b>iOS</b>\n\n" + _FORWARD_HELP_STEPS
 CIRCLE_FORWARD_HELP_ANDROID = (
     "🤖 <b>Android</b>\n\n" + _FORWARD_HELP_STEPS
 )
+
+# --- Voice note -------------------------------------------------------------
+VOICE_PROMPT = (
+    "🎙 Send me an audio file or a video.\n\n"
+    "I'll turn its audio into a native Telegram voice message.\n\n"
+    "You can send large files too."
+)
+VOICE_PROCESSING = "⏳ Turning it into a voice message…"
+VOICE_DONE = "✅ Voice note ready."
+BTN_VOICE_AGAIN = "🎙 Make Another"
+BTN_VOICE_FORWARD_HELP = '🤖 Hide "Forwarded from bot"'
+
+VOICE_UNSUPPORTED = (
+    "⚠️ I can't make a voice message from that. Send an audio file (MP3, WAV, "
+    "M4A, OGG, FLAC…) or a video with sound — as media or as a File."
+)
+VOICE_NO_AUDIO = "🔇 This video doesn't contain an audio track."
+VOICE_CORRUPT = (
+    "⚠️ I couldn't read the audio in this file. It may be damaged. "
+    "Please try another file."
+)
+VOICE_TIMEOUT = (
+    "⏱ This file took too long to convert. Please try a shorter one."
+)
+VOICE_SEND_FAILED = (
+    "⚠️ Telegram didn't accept the voice message. Please try again in a moment."
+)
+VOICE_FORBIDDEN = (
+    "🔒 Your Telegram privacy settings don't allow voice messages from this bot.\n\n"
+    "Allow them in Settings → Privacy and Security → Voice Messages, then send "
+    "the file again."
+)
+
+_VOICE_FORWARD_HELP_STEPS = _forward_help_steps("voice message")
+VOICE_FORWARD_HELP = _FORWARD_HELP_TITLE + _VOICE_FORWARD_HELP_STEPS
+VOICE_FORWARD_HELP_IOS = "🍎 <b>iOS</b>\n\n" + _VOICE_FORWARD_HELP_STEPS
+VOICE_FORWARD_HELP_ANDROID = "🤖 <b>Android</b>\n\n" + _VOICE_FORWARD_HELP_STEPS
 
 # --- Metadata ---------------------------------------------------------------
 BTN_METADATA_CLEAN = "🧼 Clean Metadata"
@@ -276,6 +319,7 @@ def stats_report(stats) -> str:
         f"Total: {stats.jobs.total}",
         "",
         f"🎥 Circles: {stats.circles}",
+        f"🎙 Voice notes: {stats.voice_notes}",
         f"🧹 Metadata cleans: {stats.metadata_cleans}",
         f"✏️ Metadata changes: {stats.metadata_changes}",
         f"🎭 Sticker searches: {stats.sticker_searches}",
