@@ -337,6 +337,8 @@ def build_read_args(exiftool_bin: str, target: Path) -> list[str]:
         # "48 deg 51' N", so a snapshot can be compared arithmetically.
         "-n",
         "-api", "QuickTimeUTC=1",
+        # Same as the writers: multi-GB videos must read back too.
+        "-api", "LargeFileSupport=1",
         "-Make", "-Model", "-Software", "-Artist", "-ImageDescription",
         "-DateTimeOriginal", "-CreateDate",
         "-GPSLatitude", "-GPSLongitude",

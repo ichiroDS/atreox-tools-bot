@@ -52,7 +52,8 @@ class FakeMessage:
 
 
 class FakeBot:
-    """Serves one local file as if Telegram had stored it."""
+    """Serves one local file as a local Bot API server on a shared disk would:
+    ``getFile`` answers with its absolute path."""
 
     def __init__(self, source: Path):
         self._source = source
@@ -62,8 +63,8 @@ class FakeBot:
             file_path=str(self._source), file_size=self._source.stat().st_size
         )
 
-    async def download_file(self, file_path, destination):
-        shutil.copy2(file_path, destination)
+    async def __call__(self, method, request_timeout=None):
+        return await method
 
 
 class FakeJobs:
@@ -103,14 +104,20 @@ async def state():
     await context.clear()
 
 
-def settings_for(tmp_path: Path):
-    return SimpleNamespace(
+def settings_for(tmp_path: Path, **overrides):
+    values = dict(
         temp_root=tmp_path / "workspaces",
-        max_file_size_bytes=50 * 1024 * 1024,
+        input_limit_bytes=50 * 1024 * 1024,
+        output_limit_bytes=50 * 1024 * 1024,
+        uses_local_bot_api=True,
+        bot_api_local_dir=str(tmp_path),
+        bot_api_files_url=None,
         process_timeout_seconds=120,
         exiftool_bin="exiftool",
         exiftool_path=EXIFTOOL,
     )
+    values.update(overrides)
+    return SimpleNamespace(**values)
 
 
 async def make_jpeg(path: Path) -> Path:
@@ -229,6 +236,41 @@ async def test_a_failing_job_reports_friendly_copy_and_still_cleans_up(
     # ...the workspace is gone, and the wizard is reset.
     assert list(settings.temp_root.glob("*")) == []
     assert await state.get_state() is None
+
+
+@needs_tools
+async def test_an_oversized_result_is_never_uploaded(tmp_path, state, jobs):
+    """The output guard runs before sendDocument, not after a failed upload."""
+    source = await make_jpeg(tmp_path / "original.jpg")
+    settings = settings_for(tmp_path, output_limit_bytes=100)
+    message = FakeMessage()
+
+    await run_clean(
+        message=message, state=state, settings=settings, source=source, jobs=jobs
+    )
+
+    assert not message.documents
+    assert texts.ERROR_OUTPUT_TOO_LARGE in message.answers
+    assert jobs.status == "failed"
+    assert jobs.error_code == ProcessingErrorCode.OUTPUT_TOO_LARGE.value
+    assert list(settings.temp_root.glob("*")) == []
+
+
+@needs_tools
+async def test_a_file_on_the_bot_api_disk_is_copied_never_edited(tmp_path, state, jobs):
+    # In local mode on a shared disk the path belongs to the Bot API server;
+    # the job must work on its own copy.
+    source = await make_jpeg(tmp_path / "server_file.jpg")
+    before = source.read_bytes()
+    message = FakeMessage()
+
+    await run_clean(
+        message=message, state=state, settings=settings_for(tmp_path),
+        source=source, jobs=jobs,
+    )
+
+    assert jobs.status == "success"
+    assert source.read_bytes() == before
 
 
 @needs_tools

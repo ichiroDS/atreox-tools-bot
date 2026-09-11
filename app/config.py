@@ -23,6 +23,17 @@ _VALID_LOG_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
 # Used whenever DATABASE_URL is absent: local dev needs no database server.
 LOCAL_SQLITE_URL = "sqlite+aiosqlite:///./atreox_tools.db"
 
+OFFICIAL_BOT_API_URL = "https://api.telegram.org"
+
+_MB = 1024 * 1024
+
+# Transport ceilings imposed by Telegram itself. The configured limits below
+# are service safety limits; the effective limit is whichever is lower, so the
+# bot never accepts work the current Bot API server cannot carry.
+CLOUD_DOWNLOAD_LIMIT_BYTES = 20 * _MB
+CLOUD_UPLOAD_LIMIT_BYTES = 50 * _MB
+LOCAL_UPLOAD_LIMIT_BYTES = 2000 * _MB
+
 # The only async drivers this application ships. Everything the engine touches
 # goes through create_async_engine, so a synchronous driver cannot work here.
 ASYNC_DRIVERS: dict[str, str] = {
@@ -87,7 +98,14 @@ class Settings(BaseSettings):
     bot_token: str
     # Configurable so we can move to a self-hosted local Bot API server
     # without touching application code.
-    bot_api_base_url: str = "https://api.telegram.org"
+    bot_api_base_url: str = OFFICIAL_BOT_API_URL
+    # Local mode only. A local Bot API server answers getFile with an absolute
+    # path on *its* disk. When the bot runs in another container (a separate
+    # Railway service) that path is fetched from this HTTP file server instead,
+    # e.g. http://telegram-bot-api.railway.internal:8082.
+    bot_api_files_url: str | None = None
+    # The server's --dir, used to turn its absolute paths into file-server URLs.
+    bot_api_local_dir: str = "/var/lib/telegram-bot-api"
 
     # --- Database ---------------------------------------------------------
     # Local development default: a zero-dependency SQLite file next to the
@@ -98,8 +116,19 @@ class Settings(BaseSettings):
 
     # --- Runtime ----------------------------------------------------------
     log_level: str = "INFO"
-    max_file_size_mb: int = Field(default=20, ge=1, le=2000)
-    process_timeout_seconds: int = Field(default=120, ge=5, le=3600)
+    # Service safety limits, not Telegram promises: see input_limit_bytes and
+    # output_limit_bytes for what is actually enforced.
+    max_input_file_size_mb: int = Field(default=2000, ge=1, le=4000)
+    max_output_file_size_mb: int = Field(default=1950, ge=1, le=2000)
+    # Per native-tool invocation (one ffprobe, one exiftool run, one circle
+    # segment encode), so a long split never has to fit in a single budget.
+    process_timeout_seconds: int = Field(default=600, ge=5, le=7200)
+    # Heavy jobs (large files, split videos) that may run at once. Small files
+    # never wait on this, so everyday use is unaffected.
+    max_concurrent_media_jobs: int = Field(default=2, ge=1, le=32)
+    # Disk the job workspaces may claim in total. 0 = derive it from the free
+    # space under TEMP_ROOT at the moment a job starts.
+    temp_disk_budget_mb: int = Field(default=0, ge=0)
     # Resolves to /tmp/atreox-tools in the container and to the user's temp
     # directory on Windows, so no drive-root write is ever attempted.
     temp_root: Path = Path(tempfile.gettempdir()) / "atreox-tools"
@@ -146,6 +175,19 @@ class Settings(BaseSettings):
             raise ValueError("BOT_API_BASE_URL must start with http:// or https://")
         return value
 
+    @field_validator("bot_api_files_url", mode="before")
+    @classmethod
+    def _validate_files_url(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = value.strip().rstrip("/")
+            if not value:
+                return None
+            if not value.startswith(("http://", "https://")):
+                raise ValueError("BOT_API_FILES_URL must start with http:// or https://")
+        return value
+
     @field_validator("video_note_size")
     @classmethod
     def _validate_even_size(cls, value: int) -> int:
@@ -163,8 +205,28 @@ class Settings(BaseSettings):
         return frozenset(ids)
 
     @property
-    def max_file_size_bytes(self) -> int:
-        return self.max_file_size_mb * 1024 * 1024
+    def input_limit_bytes(self) -> int:
+        """Largest upload the bot will accept.
+
+        The cloud Bot API cannot hand over more than 20 MB whatever we
+        configure, so until the local server is in use that stays the ceiling.
+        """
+        configured = self.max_input_file_size_mb * _MB
+        if self.uses_local_bot_api:
+            return configured
+        return min(configured, CLOUD_DOWNLOAD_LIMIT_BYTES)
+
+    @property
+    def output_limit_bytes(self) -> int:
+        """Largest file the bot will try to send back."""
+        ceiling = (
+            LOCAL_UPLOAD_LIMIT_BYTES if self.uses_local_bot_api else CLOUD_UPLOAD_LIMIT_BYTES
+        )
+        return min(self.max_output_file_size_mb * _MB, ceiling)
+
+    @property
+    def temp_disk_budget_bytes(self) -> int:
+        return self.temp_disk_budget_mb * _MB
 
     @property
     def log_level_int(self) -> int:

@@ -24,6 +24,16 @@ def circle_done() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def long_video_choices() -> InlineKeyboardMarkup:
+    """Asked when a video is longer than one circle."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=texts.BTN_CIRCLE_SPLIT, callback_data=CircleCallback(action="split"))
+    builder.button(text=texts.BTN_CIRCLE_FIRST, callback_data=CircleCallback(action="first"))
+    builder.button(text=texts.BTN_CANCEL, callback_data=CircleCallback(action="cancel"))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def forward_help() -> InlineKeyboardMarkup:
     """Platform switcher under the "hide the bot name" guide.
 

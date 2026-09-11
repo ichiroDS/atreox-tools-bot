@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import sys
+import uuid
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from app.utils.temp_files import JobWorkspace
 from app.services.telegram_files import (
     FileKind,
     FileTooLargeError,
@@ -168,10 +171,17 @@ class FakeBot:
         self.downloaded = False
 
     async def get_file(self, file_id):
-        return SimpleNamespace(file_path="path/on/telegram", file_size=self.file_size)
+        return SimpleNamespace(file_path="videos/file_1.mp4", file_size=self.file_size)
 
-    async def download_file(self, file_path, destination):
+    async def download_file(self, file_path, destination, **kwargs):
         self.downloaded = True
+        Path(destination).write_bytes(b"x" * (self.file_size or 0))
+
+
+def workspace_in(tmp_path):
+    path = tmp_path / "ws"
+    path.mkdir()
+    return JobWorkspace(job_id=uuid.uuid4(), path=path)
 
 
 async def test_declared_size_over_the_limit_is_rejected_before_download(tmp_path):
@@ -179,7 +189,7 @@ async def test_declared_size_over_the_limit_is_rejected_before_download(tmp_path
     service = TelegramFileService(bot, max_file_size_bytes=1024)
     incoming = IncomingFile(file_id="X", kind=FileKind.VIDEO, size=2048)
     with pytest.raises(FileTooLargeError):
-        await service.download(incoming, tmp_path / "out.mp4")
+        await service.fetch(incoming, workspace_in(tmp_path))
     assert bot.downloaded is False
 
 
@@ -188,7 +198,7 @@ async def test_size_reported_by_get_file_is_also_enforced(tmp_path):
     service = TelegramFileService(bot, max_file_size_bytes=1024)
     incoming = IncomingFile(file_id="X", kind=FileKind.VIDEO, size=None)
     with pytest.raises(FileTooLargeError):
-        await service.download(incoming, tmp_path / "out.mp4")
+        await service.fetch(incoming, workspace_in(tmp_path))
     assert bot.downloaded is False
 
 
@@ -196,6 +206,6 @@ async def test_download_proceeds_within_the_limit(tmp_path):
     bot = FakeBot(file_size=100)
     service = TelegramFileService(bot, max_file_size_bytes=1024)
     incoming = IncomingFile(file_id="X", kind=FileKind.VIDEO, size=100)
-    destination = tmp_path / "out.mp4"
-    await service.download(incoming, destination)
+    fetched = await service.fetch(incoming, workspace_in(tmp_path))
     assert bot.downloaded is True
+    assert fetched.size == 100

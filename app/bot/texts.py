@@ -86,6 +86,39 @@ CIRCLE_WRONG_INPUT = (
     "Use 🏠 Main Menu to pick another tool."
 )
 
+# Long videos: offered a choice instead of being silently trimmed.
+BTN_CIRCLE_SPLIT = "✂️ Split into Circles"
+BTN_CIRCLE_FIRST = "▶️ First Circle Only"
+CIRCLE_CHOICE_EXPIRED = "This choice has expired. Please send the video again."
+
+
+def format_duration(seconds: float) -> str:
+    """``1:01``, ``2:30`` or ``1:02:03`` - how a video player shows it."""
+    total = max(0, int(round(seconds)))
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+def circle_long_video(duration_seconds: float) -> str:
+    return (
+        f"🎥 This video is {format_duration(duration_seconds)} long.\n\n"
+        "What should I do?"
+    )
+
+
+def circle_progress(index: int, total: int) -> str:
+    return f"⏳ Sending circle {index}/{total}…"
+
+
+def circle_partial_failure(sent: int, total: int) -> str:
+    return (
+        f"⚠️ I sent {sent} of {total} circles, then something went wrong with "
+        "the rest. Please try again, or send a shorter video."
+    )
+
 BTN_CIRCLE_FORWARD_HELP = '🤖 Remove "Forwarded from bot"'
 BTN_CIRCLE_AGAIN = "🎥 Make Another Circle"
 BTN_GUIDE_IOS = "🍎 iOS"
@@ -210,8 +243,20 @@ ERROR_UNSUPPORTED = "That file type isn't supported yet."
 ERROR_PROCESSING = (
     "Something went wrong while processing this file. Please try another file."
 )
-ERROR_TOO_LARGE = "The file is too large for the current bot configuration."
+ERROR_TOO_LARGE = "⚠️ This file is too large for the current service limit."
+ERROR_OUTPUT_TOO_LARGE = (
+    "⚠️ The processed file is too large to send back through Telegram, so it "
+    "was not sent. Please try a smaller file."
+)
 ERROR_GENERIC = "Something went wrong. Let's start over."
+SERVER_BUSY = (
+    "⏳ The server is busy with other large files right now. "
+    "Please try again in a few minutes."
+)
+USER_JOB_RUNNING = (
+    "⏳ Your previous file is still being processed. "
+    "Send the next one as soon as it's done."
+)
 CANCELLED = "Cancelled."
 
 

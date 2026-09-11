@@ -31,5 +31,21 @@ services:
       - /tmp/atreox-tools:mode=1777
     restart: unless-stopped
 
+  # Optional local Bot API server, the same image Railway runs:
+  #   docker compose --profile local-bot-api up --build
+  # and in .env: BOT_API_BASE_URL=http://bot-api:8081
+  #              BOT_API_FILES_URL=http://bot-api:8082
+  # Needs TELEGRAM_API_ID / TELEGRAM_API_HASH in .env, and a bot token that
+  # has been logged out of the cloud API (see scripts/cutover_local_bot_api.py).
+  bot-api:
+    profiles: ["local-bot-api"]
+    build:
+      context: .
+      dockerfile: deploy/telegram-bot-api/Dockerfile
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
+    restart: unless-stopped
+
 volumes:
   pgdata:

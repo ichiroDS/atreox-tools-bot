@@ -15,6 +15,7 @@ class MenuCallback(CallbackData, prefix="menu"):
 
 class CircleCallback(CallbackData, prefix="crc"):
     # forward_help | guide_ios | guide_android | forward_back
+    # split | first | cancel   (the long-video choice)
     action: str
 
 

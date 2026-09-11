@@ -12,6 +12,7 @@ class ProcessingErrorCode(str, enum.Enum):
 
     UNSUPPORTED = "unsupported_file"
     TOO_LARGE = "file_too_large"
+    OUTPUT_TOO_LARGE = "output_too_large"
     DOWNLOAD_FAILED = "download_failed"
     PROBE_FAILED = "probe_failed"
     TIMEOUT = "processing_timeout"

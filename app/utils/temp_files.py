@@ -72,6 +72,46 @@ class JobWorkspace:
         name = f"{prefix}{uuid.uuid4().hex}{extension}"
         return self.path / name
 
+    def usage_bytes(self) -> int:
+        """Bytes currently on disk in this workspace, for per-job accounting."""
+        total = 0
+        for entry in self.path.rglob("*"):
+            try:
+                if entry.is_file():
+                    total += entry.stat().st_size
+            except OSError:
+                continue
+        return total
+
+
+def _is_workspace_name(name: str) -> bool:
+    try:
+        uuid.UUID(name)
+    except ValueError:
+        return False
+    return True
+
+
+def sweep_stale_workspaces(root: Path) -> int:
+    """Remove workspaces a previous process left behind.
+
+    Run once at startup, before any job exists: a hard kill (deploy, OOM)
+    skips the ``finally`` that normally deletes a workspace, and large media
+    left there would quietly eat the ephemeral disk. Only UUID-named
+    directories - the ones :func:`job_workspace` creates - are touched.
+    """
+    root = Path(root)
+    if not root.is_dir():
+        return 0
+    removed = 0
+    for entry in root.iterdir():
+        if entry.is_dir() and _is_workspace_name(entry.name):
+            shutil.rmtree(entry, ignore_errors=True)
+            removed += 1
+    if removed:
+        logger.info("removed %d stale workspace(s) from %s", removed, root)
+    return removed
+
 
 @asynccontextmanager
 async def job_workspace(
