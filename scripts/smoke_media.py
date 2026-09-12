@@ -33,9 +33,13 @@ from app.services.media.animation import (  # noqa: E402
     ClipChoice,
     plan_clip,
 )
+from app.services.media.circle import FfmpegVideoCircleService  # noqa: E402
 from app.services.media.frame import FrameService, Position  # noqa: E402
+from app.services.media.metadata import MetadataService  # noqa: E402
 from app.services.media.optimizer import MediaOptimizerService, Preset  # noqa: E402
+from app.services.media.probe import MediaProbe  # noqa: E402
 from app.services.media.sticker import StickerService, StickerStyle  # noqa: E402
+from app.services.media.voice import FfmpegVoiceNoteService  # noqa: E402
 from app.services.media.watermark import (  # noqa: E402
     LogoSpec,
     WatermarkService,
@@ -88,6 +92,42 @@ async def _run(root: Path, settings: Settings) -> list[tuple[str, bool, str]]:
                                   font=settings.watermark_font, **timeouts)
     optimizer = MediaOptimizerService(ffmpeg_bin=settings.ffmpeg_bin,
                                       ffprobe_bin=settings.ffprobe_bin, **timeouts)
+    circles = FfmpegVideoCircleService(
+        ffmpeg_bin=settings.ffmpeg_bin,
+        probe=MediaProbe(settings.ffprobe_bin, timeout=60),
+        size=settings.video_note_size,
+        max_duration=settings.video_note_max_duration,
+        timeout=settings.process_timeout_seconds,
+    )
+    voices = FfmpegVoiceNoteService(ffmpeg_bin=settings.ffmpeg_bin,
+                                    ffprobe_bin=settings.ffprobe_bin, **timeouts)
+    metadata = MetadataService(exiftool_bin=settings.exiftool_bin,
+                               timeout=settings.process_timeout_seconds)
+
+    async def circle() -> str:
+        info = await circles.probe(video)
+        segment = circles.plan(info)[0]
+        workspace = _workspace(root)
+        result = await circles.encode_segment(
+            video, workspace.new_file(".mp4", prefix="circle_"), segment, with_audio=info.has_audio
+        )
+        return f"{settings.video_note_size}px, {result.size_bytes} bytes"
+
+    async def voice() -> str:
+        info = await voices.probe(video)
+        workspace = _workspace(root)
+        result = await voices.encode(video, workspace.new_file(".ogg", prefix="voice_"))
+        return f"{result.duration:.1f}s from {info.audio_codec}, {result.size_bytes} bytes"
+
+    async def clean_metadata() -> str:
+        workspace = _workspace(root)
+        copy = workspace.path / "photo.jpg"
+        from PIL import Image
+
+        with Image.open(photo) as picture:
+            picture.convert("RGB").save(copy, quality=95)
+        result = await metadata.clean(copy)
+        return f"{result.size_bytes} bytes"
 
     async def gif() -> str:
         source = await animation.analyze(video)
@@ -143,6 +183,7 @@ async def _run(root: Path, settings: Settings) -> list[tuple[str, bool, str]]:
         return f"{result.width}x{result.height}, {result.size_bytes} bytes"
 
     checks = (
+        # The tools this deployment changed, first.
         ("GIF / MP4 - video to GIF", gif),
         ("GIF / MP4 - to MP4", mp4),
         ("GIF / MP4 - optimize GIF", optimize_gif),
@@ -152,6 +193,11 @@ async def _run(root: Path, settings: Settings) -> list[tuple[str, bool, str]]:
         ("Watermark - logo on a photo", logo_on_photo),
         ("Watermark - logo on a video", logo_on_video),
         ("Media Optimizer", optimize),
+        # ...then the ones it did not, because a shared change can still
+        # break them.
+        ("Video to Circle", circle),
+        ("Voice Note", voice),
+        ("Metadata Studio - clean", clean_metadata),
     )
 
     results: list[tuple[str, bool, str]] = []
