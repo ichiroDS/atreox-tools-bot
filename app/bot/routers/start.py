@@ -87,6 +87,27 @@ async def handle_cancel_command(message: Message, state: FSMContext) -> None:
     await message.answer(texts.CANCELLED, reply_markup=main_menu())
 
 
+@router.message(Command("restart"))
+async def handle_restart_command(message: Message, state: FSMContext) -> None:
+    """Throw away everything the bot remembers about this conversation.
+
+    Half-finished wizards, a collected batch, an uploaded logo waiting for its
+    position - all of it lives in this chat's session, and this drops the lot
+    and starts again from the menu. Saved presets are deliberately untouched:
+    they are the one thing the user asked us to keep.
+
+    It does not restart the process. One user's stuck wizard is no reason to
+    interrupt everybody else's uploads, and a command anyone can send must
+    never be able to take the bot down.
+    """
+    await state.clear()
+    logger.info(
+        "session reset telegram_user_id=%s",
+        message.from_user.id if message.from_user else "-",
+    )
+    await message.answer(texts.RESTARTED, reply_markup=main_menu())
+
+
 @router.callback_query(MenuCallback.filter(F.action == "main"))
 async def handle_main_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()

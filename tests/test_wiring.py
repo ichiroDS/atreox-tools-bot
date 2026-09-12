@@ -142,7 +142,7 @@ def test_public_command_menu_hides_the_admin_command():
     from app.main import PUBLIC_COMMANDS
 
     commands = {c.command for c in PUBLIC_COMMANDS}
-    assert commands == {"start", "help", "privacy"}
+    assert commands == {"start", "restart", "help", "privacy"}
     assert "stats" not in commands
     for command in PUBLIC_COMMANDS:
         assert command.description

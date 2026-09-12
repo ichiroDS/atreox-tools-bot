@@ -68,6 +68,7 @@ async def handle_unexpected_error(event: ErrorEvent) -> bool:
 # and listing it would advertise a command most users cannot run.
 PUBLIC_COMMANDS = (
     BotCommand(command="start", description="Open Atreox Tools"),
+    BotCommand(command="restart", description="Start over with a clean session"),
     BotCommand(command="help", description="How to use the tools"),
     BotCommand(command="privacy", description="Privacy information"),
 )

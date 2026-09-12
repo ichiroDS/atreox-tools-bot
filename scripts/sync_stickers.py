@@ -11,6 +11,10 @@ Re-running is safe: packs are matched on ``telegram_set_name`` and their
 samples are replaced, so it doubles as a refresh when a pack changes.
 A pack Telegram no longer serves is skipped with a warning rather than
 aborting the run.
+
+Packs the catalog no longer lists are deleted, so dropping a pack - or a whole
+category - from ``packs.py`` actually removes it from what users see instead of
+leaving an orphan row behind.
 """
 
 from __future__ import annotations
@@ -53,7 +57,7 @@ async def resolve_pack(bot, pack: CuratedPack) -> tuple[str, list[tuple[str, str
     return pack.title or sticker_set.title, samples
 
 
-async def sync(dry_run: bool = False) -> tuple[int, int]:
+async def sync(dry_run: bool = False) -> tuple[int, int, int]:
     settings = get_settings()
     bot = create_bot(settings)
     engine = create_engine(settings.database_url)
@@ -93,13 +97,30 @@ async def sync(dry_run: bool = False) -> tuple[int, int]:
                     for file_id, emoji in samples
                 ]
 
+            removed = await prune(session, dry_run=dry_run)
             if not dry_run:
                 await session.commit()
     finally:
         await bot.session.close()
         await engine.dispose()
 
-    return pack_count, sample_count
+    return pack_count, sample_count, removed
+
+
+async def prune(session, *, dry_run: bool = False) -> int:
+    """Delete catalog rows for packs that are no longer curated."""
+    curated = {pack.telegram_set_name for pack in CURATED_PACKS}
+    stale = [
+        sticker_set
+        for sticker_set in (await session.scalars(select(StickerSet))).all()
+        if sticker_set.telegram_set_name not in curated
+    ]
+    for sticker_set in stale:
+        print(f"  remove {sticker_set.telegram_set_name} ({sticker_set.category})")
+        if not dry_run:
+            # Samples go with it: the relationship cascades.
+            await session.delete(sticker_set)
+    return len(stale)
 
 
 def main() -> None:
@@ -111,9 +132,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    packs, samples = asyncio.run(sync(dry_run=args.dry_run))
+    packs, samples, removed = asyncio.run(sync(dry_run=args.dry_run))
     verb = "would sync" if args.dry_run else "synced"
-    print(f"{verb} {packs} packs / {samples} samples")
+    print(f"{verb} {packs} packs / {samples} samples, {removed} no longer curated")
 
 
 if __name__ == "__main__":

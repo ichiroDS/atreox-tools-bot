@@ -18,10 +18,6 @@ class StickerCategory:
 STICKER_CATEGORIES: tuple[StickerCategory, ...] = (
     StickerCategory(key="reactions", label="😂 Reactions"),
     StickerCategory(key="cute", label="🥰 Cute"),
-    StickerCategory(key="flirty", label="💖 Flirty"),
-    StickerCategory(key="aesthetic", label="✨ Aesthetic"),
-    StickerCategory(key="savage", label="😈 Savage"),
-    StickerCategory(key="morning_night", label="🌙 Good Morning / Good Night"),
     StickerCategory(key="anime", label="🎌 Anime"),
 )
 

@@ -35,11 +35,13 @@ class FakeMessage:
         self.location = None
         self.answers: list[str] = []
         self.edits: list[str] = []
+        self.markups: list = []
         for key, value in fields.items():
             setattr(self, key, value)
 
     async def answer(self, text=None, **kwargs):
         self.answers.append(text)
+        self.markups.append(kwargs.get("reply_markup"))
         return FakeMessage()
 
     async def edit_text(self, text=None, **kwargs):
@@ -368,3 +370,33 @@ async def test_apply_without_collected_data_fails_safely(state):
     )
     assert await state.get_state() is None
     assert callback.message.answers == [texts.ERROR_GENERIC]
+
+
+# --- /restart ----------------------------------------------------------------
+
+
+async def test_restart_drops_everything_the_session_held(state):
+    """A wizard half-way through, a collected batch, an uploaded logo: gone."""
+    from app.bot.routers import start as start_router
+
+    await state.set_state(ChangeMetadataStates.confirming)
+    await state.update_data(
+        file={"file_id": "FILE-1"}, logo="Ym9ndXM=", city_key="jp_tokyo"
+    )
+    message = FakeMessage()
+    message.from_user = SimpleNamespace(id=42, is_bot=False)
+
+    await start_router.handle_restart_command(message, state)
+
+    assert await state.get_state() is None
+    assert await state.get_data() == {}
+    assert message.answers == [texts.RESTARTED]
+    # The reply gets the user moving again rather than leaving a dead end.
+    labels = [b.text for row in message.markups[-1].inline_keyboard for b in row]
+    assert texts.BTN_CIRCLE in labels
+
+
+def test_restart_copy_is_honest_about_what_it_cannot_do():
+    """A bot cannot wipe a chat's history, so the copy must not imply it does."""
+    assert "presets are still there" in texts.RESTARTED
+    assert "Clear History" in texts.RESTARTED

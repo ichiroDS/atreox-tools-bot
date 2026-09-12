@@ -26,6 +26,10 @@ class StickerSet(Base):
         back_populates="sticker_set",
         cascade="all, delete-orphan",
         lazy="selectin",
+        # Pack order, and explicitly so: a database is free to return rows in
+        # any order without it, and which sticker represents a pack is chosen
+        # by position.
+        order_by="StickerSample.id",
     )
 
 

@@ -3,6 +3,11 @@
 Atreox Tools is not a pack downloader: we hand the user single stickers, each
 one from a *different* pack, so tapping one opens its source pack in Telegram
 and they can add it themselves.
+
+Which sticker stands for a pack is *fixed* (see ``packs.sample_position``), not
+drawn at random: a pack should look the same every time it comes up, so a
+category becomes recognisable. What still varies between taps is which packs a
+batch draws from - that is what makes "More" show something new.
 """
 
 from __future__ import annotations
@@ -10,7 +15,9 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass
-from typing import Iterable, Protocol, Sequence
+from typing import Callable, Iterable, Protocol, Sequence
+
+from app.services.stickers.packs import sample_position_for
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +45,16 @@ class StickerPick:
     emoji: str | None = None
 
 
-def _pick_sample(samples: Sequence[_Sample], rng: random.Random) -> _Sample | None:
+def _pick_sample(samples: Sequence[_Sample], position: int) -> _Sample | None:
+    """The pack's chosen sticker, or its last one when the pack is shorter.
+
+    ``position`` is 1-based. Samples are stored in pack order, so this is the
+    same sticker on every call - the point of fixing it.
+    """
     usable = [s for s in samples if s.enabled and s.telegram_file_id]
     if not usable:
         return None
-    weights = [max(1, int(s.weight or 1)) for s in usable]
-    return rng.choices(usable, weights=weights, k=1)[0]
+    return usable[min(max(1, position), len(usable)) - 1]
 
 
 def select_distinct_stickers(
@@ -52,6 +63,7 @@ def select_distinct_stickers(
     *,
     rng: random.Random | None = None,
     exclude_set_names: Iterable[str] = (),
+    position_for: Callable[[str], int] = sample_position_for,
 ) -> list[StickerPick]:
     """Pick at most ``count`` stickers, never two from the same pack.
 
@@ -78,7 +90,9 @@ def select_distinct_stickers(
             break
         if sticker_set.telegram_set_name in seen:
             continue
-        sample = _pick_sample(sticker_set.samples, rng)
+        sample = _pick_sample(
+            sticker_set.samples, position_for(sticker_set.telegram_set_name)
+        )
         if sample is None:
             continue
         seen.add(sticker_set.telegram_set_name)

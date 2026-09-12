@@ -85,3 +85,55 @@ async def test_service_queries_the_requested_category():
     picks = await service.find("cute", count=6)
     assert repository.calls == ["cute"]
     assert len({p.set_name for p in picks}) == 6
+
+
+# --- the sticker that stands for a pack is fixed, not drawn -------------------
+
+
+def _pack(name: str, size: int):
+    return make_set(name, [make_sample(f"{name}-{position}") for position in range(1, size + 1)])
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_a_pack_always_shows_the_same_sticker(seed):
+    """A category is recognisable only if a pack looks the same every time."""
+    picks = select_distinct_stickers(
+        [_pack("pack_a", 8), _pack("pack_b", 8)], 2, rng=random.Random(seed),
+        position_for=lambda _name: 5,
+    )
+    assert {p.file_id for p in picks} == {"pack_a-5", "pack_b-5"}
+
+
+def test_the_default_position_is_the_fifth_sticker():
+    from app.services.stickers.packs import DEFAULT_SAMPLE_POSITION, sample_position_for
+
+    assert DEFAULT_SAMPLE_POSITION == 5
+    assert sample_position_for("HotCherry") == 5
+    # A pack with a position of its own keeps it.
+    assert sample_position_for("DisgruntledToad") == 6
+    # A row left behind by an older sync still resolves.
+    assert sample_position_for("gone_from_the_catalog") == 5
+
+
+def test_a_short_pack_falls_back_to_its_last_sticker():
+    picks = select_distinct_stickers(
+        [_pack("tiny", 2)], 1, rng=random.Random(0), position_for=lambda _name: 5
+    )
+    assert [p.file_id for p in picks] == ["tiny-2"]
+
+
+def test_the_position_is_read_from_the_curated_catalog_by_default():
+    """No explicit position_for: the catalog's own numbers are used."""
+    picks = select_distinct_stickers([_pack("DisgruntledToad", 8)], 1, rng=random.Random(0))
+    assert [p.file_id for p in picks] == ["DisgruntledToad-6"]
+
+
+def test_disabled_stickers_do_not_shift_the_position():
+    """Position counts the stickers we can actually send."""
+    samples = [make_sample(f"p-{i}") for i in range(1, 9)]
+    samples[1] = make_sample("p-2", enabled=False)
+    picks = select_distinct_stickers(
+        [make_set("p", samples)], 1, rng=random.Random(0), position_for=lambda _name: 5
+    )
+    # The second sticker is unusable, so the fifth usable one is the sixth.
+    assert [p.file_id for p in picks] == ["p-6"]

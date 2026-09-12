@@ -883,6 +883,12 @@ USER_JOB_RUNNING = (
     "Send the next one as soon as it's done."
 )
 CANCELLED = "Cancelled."
+RESTARTED = (
+    "🔄 Fresh start. I've forgotten every unfinished step — your saved "
+    "watermark presets are still there.\n\n"
+    "To clear the messages in this chat, use the chat menu at the top → "
+    "Clear History."
+)
 
 
 def stats_report(stats) -> str:

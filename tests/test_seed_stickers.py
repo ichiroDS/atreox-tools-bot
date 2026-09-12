@@ -29,8 +29,8 @@ def entry(**overrides):
 def test_shipped_fixture_loads_and_validates():
     entries = load_fixture(SHIPPED_FIXTURE)
     validate_fixture(entries)
-    assert len(entries) >= 6
-    assert len({e["category"] for e in entries}) >= 6
+    assert len(entries) >= 5
+    assert len({e["category"] for e in entries}) >= 3
 
 
 def test_json_fixtures_are_supported(tmp_path):
@@ -101,7 +101,7 @@ async def test_seeding_is_idempotent(sqlite_settings, tmp_path):
             {
                 "sticker_sets": [
                     entry(),
-                    entry(telegram_set_name="PackB", category="savage"),
+                    entry(telegram_set_name="PackB", category="anime"),
                 ]
             },
             ensure_ascii=False,
@@ -123,7 +123,7 @@ async def test_seeding_is_idempotent(sqlite_settings, tmp_path):
             {
                 "sticker_sets": [
                     entry(title="Renamed", samples=[{"file_id": "F9"}]),
-                    entry(telegram_set_name="PackB", category="savage"),
+                    entry(telegram_set_name="PackB", category="anime"),
                 ]
             },
             ensure_ascii=False,

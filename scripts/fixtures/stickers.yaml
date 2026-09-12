@@ -44,33 +44,9 @@ sticker_sets:
     samples:
       - file_id: REPLACE_ME_cats_1
         emoji: "😻"
-
-  - telegram_set_name: LoveMood
-    title: Love Mood
-    category: flirty
+  - telegram_set_name: AnimeDaily
+    title: Anime Daily
+    category: anime
     samples:
-      - file_id: REPLACE_ME_love_1
-        emoji: "💖"
-
-  - telegram_set_name: AestheticVibes
-    title: Aesthetic Vibes
-    category: aesthetic
-    samples:
-      - file_id: REPLACE_ME_aesthetic_1
-        emoji: "✨"
-
-  - telegram_set_name: SavageReplies
-    title: Savage Replies
-    category: savage
-    samples:
-      - file_id: REPLACE_ME_savage_1
-        emoji: "😈"
-
-  - telegram_set_name: MorningNight
-    title: Morning and Night
-    category: morning_night
-    samples:
-      - file_id: REPLACE_ME_morning_1
-        emoji: "🌅"
-      - file_id: REPLACE_ME_night_1
-        emoji: "🌙"
+      - file_id: REPLACE_ME_anime_1
+        emoji: "🎌"

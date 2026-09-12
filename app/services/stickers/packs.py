@@ -5,11 +5,21 @@ cannot be written down in advance, so ``scripts/sync_stickers.py`` resolves
 them against the live Bot API and writes them to the database.
 
 Adding a pack means adding its name below and re-running the sync.
+
+Titles are given explicitly rather than adopted from Telegram: a lot of good
+packs carry a promo line as their title ("Больше стикеров тут: @...", "@fixfox
+@sharkhd"), which is someone else's advertising, not a category label.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+# Which sticker of a pack represents it. Packs open with their most generic
+# faces, so a fixed position a little way in shows something with character -
+# and, being fixed, it shows the *same* sticker every time, which is what
+# makes a category recognisable instead of a lottery. 1-based.
+DEFAULT_SAMPLE_POSITION = 5
 
 
 @dataclass(frozen=True)
@@ -21,6 +31,8 @@ class CuratedPack:
     # Display title. Left empty to adopt whatever Telegram reports, which is
     # what we do for packs whose own title is already good.
     title: str = ""
+    # Which sticker stands for this pack, 1-based; see the constant above.
+    sample_position: int = DEFAULT_SAMPLE_POSITION
 
 
 CURATED_PACKS: tuple[CuratedPack, ...] = (
@@ -30,7 +42,7 @@ CURATED_PACKS: tuple[CuratedPack, ...] = (
     CuratedPack("PepeTheFrog", "reactions", "Pepe"),
     CuratedPack("CryingCat", "reactions", "Crying Cat"),
     CuratedPack("SadHamster", "reactions", "Sad Hamster"),
-    CuratedPack("Sisyphus", "reactions", "Sisyphus"),
+    CuratedPack("DisgruntledToad", "reactions", "Disgruntled Toad", sample_position=6),
     CuratedPack("AnimatedEmojies", "reactions", "Animated Emoji"),
     # --- cute ---------------------------------------------------------------
     CuratedPack("Persik", "cute", "Persik the Cat"),
@@ -41,42 +53,38 @@ CURATED_PACKS: tuple[CuratedPack, ...] = (
     CuratedPack("Penguin", "cute", "Penguins"),
     CuratedPack("Rabbit", "cute", "Rabbit"),
     CuratedPack("Ruffle", "cute", "Ruffle"),
-    # --- flirty -------------------------------------------------------------
-    CuratedPack("Valentine", "flirty", "Valentine"),
-    CuratedPack("Hearts", "flirty", "Hearts"),
-    CuratedPack("Flirt", "flirty", "Bloom"),
-    CuratedPack("LoveYou", "flirty", "Love You"),
-    CuratedPack("Heart", "flirty", "Heart"),
-    # --- aesthetic ----------------------------------------------------------
-    CuratedPack("Aesthetic", "aesthetic", "Aesthetic"),
-    CuratedPack("Vaporwave", "aesthetic", "Vaporwave"),
-    CuratedPack("Whales", "aesthetic", "Whales"),
-    CuratedPack("Snoopy", "aesthetic", "Snoopy"),
-    CuratedPack("Stars", "aesthetic", "Stars"),
-    # --- savage -------------------------------------------------------------
-    CuratedPack("Savage", "savage", "Trap Savage"),
-    CuratedPack("Devil", "savage", "Diabliyo"),
-    CuratedPack("Money", "savage", "Money"),
-    CuratedPack("Toffee", "savage", "Toffee"),
-    CuratedPack("Shark", "savage", "Shark"),
-    # --- morning / night ----------------------------------------------------
-    CuratedPack("GoodMorning", "morning_night", "Good Morning"),
-    CuratedPack("GoodNight", "morning_night", "Good Night"),
-    CuratedPack("Coffee", "morning_night", "Coffee"),
-    CuratedPack("Sleep", "morning_night", "Sleep"),
-    CuratedPack("Sleepy", "morning_night", "Sleepy"),
-    CuratedPack("Dream", "morning_night", "Dream"),
-    CuratedPack("Night", "morning_night", "Night"),
+    CuratedPack("cybercats_stickers", "cute", "Cyber Cats"),
+    CuratedPack("nzrfzsepnp311df9_by_Stickerevobot", "cute", "Hearts & Love"),
     # --- anime --------------------------------------------------------------
     CuratedPack("SouFrierenp_2fx", "anime", "Sousou no Frieren"),
     CuratedPack("Randomharkhd", "anime", "Anime Daily"),
-    CuratedPack("longanimepack", "anime", "Long Girls"),
-    CuratedPack("OurOmegaLeadernim", "anime", "Our Omega Leader"),
+    CuratedPack("BanG_Dream_Ave_Mujica_P3", "anime", "BanG Dream! Ave Mujica"),
+    CuratedPack("Vermeil_Part_1_by_Fix_x_Fox", "anime", "Vermeil"),
+    CuratedPack("wtffffffffffDD", "anime", "Daily Usable I"),
+    CuratedPack("wtfffffff_2_Fix_x_Fox", "anime", "Daily Usable II"),
+    CuratedPack("devradio", "anime", "Dev Radio"),
+    CuratedPack("Marin_Kitagawa_p1", "anime", "Marin Kitagawa"),
+    CuratedPack("marinkitagawaanime", "anime", "Marin Kitagawa II"),
+    CuratedPack("Adopotet", "anime", "Ado"),
 )
 
 
 def packs_for_category(category: str) -> tuple[CuratedPack, ...]:
     return tuple(p for p in CURATED_PACKS if p.category == category)
+
+
+def sample_position_for(
+    set_name: str, packs: tuple[CuratedPack, ...] = CURATED_PACKS
+) -> int:
+    """Which sticker represents this pack, 1-based.
+
+    A pack the catalog no longer lists (a row left in the database from an
+    older sync) falls back to the default rather than failing.
+    """
+    for pack in packs:
+        if pack.telegram_set_name == set_name:
+            return pack.sample_position
+    return DEFAULT_SAMPLE_POSITION
 
 
 def validate_packs(packs: tuple[CuratedPack, ...] = CURATED_PACKS) -> None:
@@ -93,6 +101,10 @@ def validate_packs(packs: tuple[CuratedPack, ...] = CURATED_PACKS) -> None:
         if pack.category not in CATEGORY_KEYS:
             raise ValueError(
                 f"{pack.telegram_set_name}: unknown category {pack.category!r}"
+            )
+        if pack.sample_position < 1:
+            raise ValueError(
+                f"{pack.telegram_set_name}: sample_position is 1-based"
             )
 
 

@@ -206,16 +206,11 @@ def test_anime_is_offered_as_its_own_category():
     assert labels["anime"] == "\U0001f38c Anime"
 
 
-def test_the_original_categories_all_survive():
-    keys = {c.key for c in STICKER_CATEGORIES}
-    assert {
-        "reactions",
-        "cute",
-        "flirty",
-        "aesthetic",
-        "savage",
-        "morning_night",
-    } <= keys
+def test_the_offered_categories_are_the_three_that_are_curated():
+    """Flirty, Aesthetic, Savage and Good Morning/Night were retired: their
+    packs were thin (several resolved to one or two stickers) and the squatted
+    generic names kept drifting to whatever pack owned them that month."""
+    assert [c.key for c in STICKER_CATEGORIES] == ["reactions", "cute", "anime"]
 
 
 def test_anime_has_enough_packs_for_a_varied_batch():
@@ -231,6 +226,32 @@ def test_anime_packs_are_the_ones_that_were_curated():
     assert names == {
         "SouFrierenp_2fx",
         "Randomharkhd",
-        "longanimepack",
-        "OurOmegaLeadernim",
+        "BanG_Dream_Ave_Mujica_P3",
+        "Vermeil_Part_1_by_Fix_x_Fox",
+        "wtffffffffffDD",
+        "wtfffffff_2_Fix_x_Fox",
+        "devradio",
+        "Marin_Kitagawa_p1",
+        "marinkitagawaanime",
+        "Adopotet",
     }
+
+
+def test_the_retired_categories_have_no_packs_left_behind():
+    """A pack pointing at a category that no longer exists would fail
+    validation; this keeps the two lists honest about having been cleaned up
+    together."""
+    from app.services.stickers.packs import CURATED_PACKS
+
+    live = {c.key for c in STICKER_CATEGORIES}
+    assert {p.category for p in CURATED_PACKS} <= live
+    for retired in ("flirty", "aesthetic", "savage", "morning_night"):
+        assert packs_for_category(retired) == ()
+
+
+def test_reactions_dropped_the_pack_that_was_not_in_english():
+    """"Sisyphus" resolved to a Persian-titled pack, which read as noise in an
+    English menu; Disgruntled Toad took its place."""
+    names = {p.telegram_set_name for p in packs_for_category("reactions")}
+    assert "Sisyphus" not in names
+    assert "DisgruntledToad" in names
