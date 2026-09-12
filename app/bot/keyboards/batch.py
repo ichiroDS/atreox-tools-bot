@@ -43,7 +43,8 @@ def watermark_choices(presets) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for preset in presets:
         builder.button(
-            text=f"💾 {preset.name}",
+            # A saved logo is marked as one, as it is in the Watermark tool.
+            text=f"{'🖼' if getattr(preset, 'is_logo', False) else '💾'} {preset.name}",
             callback_data=BatchCallback(action="preset", value=str(preset.id)),
         )
     builder.button(

@@ -37,6 +37,10 @@ class Stats:
     batches: int = 0
     metadata_cleans: int = 0
     metadata_changes: int = 0
+    # GIF/MP4 conversions, stickers made and stills pulled out of videos.
+    conversions: int = 0
+    stickers_made: int = 0
+    frames: int = 0
     sticker_searches: int = 0
     cta_clicks: int = 0
     # (source, count), most popular first.
@@ -106,6 +110,9 @@ class StatsRepository:
             batches=await events(Feature.BATCH_COMPLETED),
             metadata_cleans=await successful(JobType.METADATA_CLEAN),
             metadata_changes=await successful(JobType.METADATA_CHANGE),
+            conversions=await successful(JobType.CONVERT),
+            stickers_made=await successful(JobType.MAKE_STICKER),
+            frames=await successful(JobType.EXTRACT_FRAME),
             sticker_searches=await events(Feature.STICKERS),
             cta_clicks=await events(Feature.CTA_CLICK),
             top_sources=tuple((str(source), int(count)) for source, count in sources),

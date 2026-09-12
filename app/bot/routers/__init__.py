@@ -2,9 +2,12 @@ from aiogram import Router
 
 from app.bot.routers import (
     admin,
+    animation,
     batch,
     circle,
     fallback,
+    frame,
+    make_sticker,
     metadata,
     optimizer,
     start,
@@ -28,6 +31,9 @@ def build_root_router() -> Router:
     root.include_router(optimizer.router)
     root.include_router(watermark.router)
     root.include_router(batch.router)
+    root.include_router(animation.router)
+    root.include_router(frame.router)
+    root.include_router(make_sticker.router)
     root.include_router(metadata.router)
     root.include_router(stickers.router)
     root.include_router(admin.router)

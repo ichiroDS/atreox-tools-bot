@@ -14,6 +14,11 @@ class Feature(str, enum.Enum):
     VOICE_NOTE = "voice_note"
     MEDIA_OPTIMIZE = "media_optimize"
     WATERMARK = "watermark"
+    # The watermark is a picture the user uploaded, not a line of text.
+    WATERMARK_LOGO = "watermark_logo"
+    CONVERT = "convert"
+    MAKE_STICKER = "make_sticker"
+    EXTRACT_FRAME = "extract_frame"
     # One batch: started when processing begins, completed when it ends.
     BATCH_STARTED = "batch_started"
     BATCH_COMPLETED = "batch_completed"

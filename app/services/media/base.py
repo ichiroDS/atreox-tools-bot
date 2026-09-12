@@ -32,6 +32,8 @@ class ProcessingErrorCode(str, enum.Enum):
     NO_AUDIO = "no_audio"
     # The file looked like media, but its audio cannot be decoded.
     CORRUPT_INPUT = "corrupt_input"
+    # Too few pixels to make anything of - a sticker, for instance.
+    TOO_SMALL = "too_small"
     SEND_FAILED = "send_failed"
     # The recipient's privacy settings refuse voice messages from this bot.
     VOICE_FORBIDDEN = "voice_forbidden"

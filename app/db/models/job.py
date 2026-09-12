@@ -17,6 +17,10 @@ class JobType(str, enum.Enum):
     VOICE_NOTE = "voice_note"
     MEDIA_OPTIMIZE = "media_optimize"
     WATERMARK = "watermark"
+    # One GIF/MP4 conversion, whichever direction it went.
+    CONVERT = "convert"
+    MAKE_STICKER = "make_sticker"
+    EXTRACT_FRAME = "extract_frame"
 
 
 class JobStatus(str, enum.Enum):

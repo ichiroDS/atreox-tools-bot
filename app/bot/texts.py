@@ -22,6 +22,9 @@ BTN_MAIN_MENU = "\U0001f3e0 Main Menu"
 BTN_MAIN_MENU_HOME = BTN_MAIN_MENU
 BTN_CANCEL = "\u274c Cancel"
 BTN_BATCH = "\U0001f4e6 Batch Mode"
+BTN_ANIMATION = "\U0001f39e GIF / MP4"
+BTN_FRAME = "\U0001f5bc Extract Frame"
+BTN_MAKE_STICKER = "\U0001f3f7 Make Sticker"
 
 START = (
     "\u26a1 <b>Atreox Tools</b>\n\n"
@@ -54,6 +57,14 @@ HELP = (
     "\U0001f4e6 <b>Batch Mode</b>\n"
     "Process multiple photos and videos at once with Metadata Cleaner, "
     "Watermark or Media Optimizer.\n\n"
+    "\U0001f39e <b>GIF / MP4</b>\n"
+    "Turns a video into a GIF, or a GIF into a silent MP4. Long videos are "
+    "cut to a short clip you choose.\n\n"
+    "\U0001f5bc <b>Extract Frame</b>\n"
+    "Saves a single still from a video as a JPG or PNG, at full frame size.\n\n"
+    "\U0001f3f7 <b>Make Sticker</b>\n"
+    "Turns an image into a real Telegram sticker, with an optional white or "
+    "black outline.\n\n"
     "\U0001f3ad <b>Find Stickers</b>\n"
     "Discover useful Telegram sticker packs by category.\n\n"
     "\U0001f4ce <b>Tip:</b>\n"
@@ -75,7 +86,10 @@ PRIVACY = (
     "Locations chosen in Metadata Studio are kept only for the active "
     "processing session and are not stored as permanent user profile data.\n\n"
     "Watermarks you choose to save as presets are stored with your Telegram id "
-    "until you delete them. Nothing else you send is kept.\n\n"
+    "until you delete them. A saved image/logo preset keeps that small logo "
+    "image itself, so it survives restarts and is there next time; it is "
+    "visible only to you and is removed when you delete the preset. Nothing "
+    "else you send is kept.\n\n"
     "Basic usage data may be stored to understand which tools are used and "
     "improve the service: your Telegram id, username, first name and language, "
     "how you first found the bot, which tools you open, and for each job its "
@@ -393,6 +407,209 @@ WATERMARK_FONT_MISSING = (
     "Please try again later."
 )
 
+# --- Watermark: image / logo ------------------------------------------------
+WATERMARK_TYPE_PROMPT_CHOICE = "Choose watermark type:"
+BTN_WATERMARK_TYPE_TEXT = "✏️ Text"
+BTN_WATERMARK_TYPE_LOGO = "🖼 Image / Logo"
+
+WATERMARK_LOGO_PROMPT = (
+    "🖼 Send me your logo as an image.\n\n"
+    "A transparent PNG works best. JPG and WEBP are fine too.\n\n"
+    "Keep it small — up to 1 MB."
+)
+WATERMARK_LOGO_UNSUPPORTED = (
+    "⚠️ That doesn't work as a logo. Send a PNG, JPG or WEBP image, up to 1 MB."
+)
+WATERMARK_LOGO_TOO_LARGE = (
+    "⚠️ That logo is too large. Send an image of up to 1 MB — a logo only needs "
+    "to be a few hundred pixels wide."
+)
+WATERMARK_LOGO_GONE = (
+    "⚠️ I no longer have that logo. Please send it again."
+)
+BTN_WATERMARK_LOGO_AGAIN = "🖼 Change Logo"
+WATERMARK_LOGO_PRESET_SAVED = "💾 Logo saved to your presets."
+
+# A logo preset is saved in one tap and can be renamed afterwards, so it needs
+# a name of its own.
+def watermark_logo_preset_name(index: int) -> str:
+    return f"Logo {index}"
+
+
+def watermark_logo_summary(*, position: str, size: str, opacity: int) -> str:
+    return (
+        "🖼 <b>Logo watermark</b>\n\n"
+        f"Position: {_plain(WATERMARK_POSITION_LABELS[position])}\n"
+        f"Size: {WATERMARK_SIZE_LABELS[size]}\n"
+        f"Opacity: {opacity}%\n\n"
+        "Apply?"
+    )
+
+
+def watermark_logo_preset_detail(
+    *, name: str, position: str, size: str, opacity: int
+) -> str:
+    return (
+        f"💾 <b>{name}</b>\n\n"
+        "Type: image / logo\n"
+        f"Position: {_plain(WATERMARK_POSITION_LABELS[position])}\n"
+        f"Size: {WATERMARK_SIZE_LABELS[size]}\n"
+        f"Opacity: {opacity}%"
+    )
+
+
+# --- GIF / MP4 --------------------------------------------------------------
+ANIMATION_PROMPT = (
+    "🎞 Send me a video or GIF.\n\n"
+    "I can convert video to GIF, or GIF to MP4.\n\n"
+    "Large files are supported."
+)
+ANIMATION_ANALYZING = "🔎 Checking your file..."
+ANIMATION_PROCESSING = "⏳ Converting..."
+ANIMATION_CHOOSE = "What should I do with it?"
+ANIMATION_CUSTOM_TIME_PROMPT = (
+    "⌨️ Send the start time, as seconds or mm:ss.\n\n"
+    "For example: <code>12</code> or <code>1:05</code>."
+)
+ANIMATION_TIME_REJECTED = (
+    "⚠️ I couldn't read that as a time inside this video. Send seconds "
+    "(<code>12</code>) or mm:ss (<code>1:05</code>)."
+)
+ANIMATION_CHOICE_EXPIRED = "This choice has expired. Please send the file again."
+
+BTN_ANIMATION_TO_GIF = "🎞 Convert to GIF"
+BTN_ANIMATION_TO_MP4 = "▶️ Convert to MP4"
+BTN_ANIMATION_OPTIMIZE_GIF = "🎞 Optimize GIF"
+BTN_ANIMATION_CLIP_FIRST = "✂️ First 6s"
+BTN_ANIMATION_CLIP_MIDDLE = "🎯 Middle 6s"
+BTN_ANIMATION_CLIP_CUSTOM = "⌨️ Custom Start Time"
+BTN_ANIMATION_AGAIN = "🎞 Convert Another"
+
+ANIMATION_GIF_DONE = "✅ Your GIF is ready."
+ANIMATION_MP4_DONE = "✅ Your MP4 is ready."
+ANIMATION_GIF_ALREADY_SMALL = (
+    "✅ This GIF is already efficient — a smaller one would lose quality for "
+    "nothing, so I kept your original."
+)
+ANIMATION_UNSUPPORTED = (
+    "⚠️ I can't convert that. Send a video (MP4, MOV, WEBM, MKV…) or a GIF — "
+    "as media or as a File."
+)
+ANIMATION_CORRUPT = (
+    "⚠️ I couldn't read this file. It may be damaged. Please try another one."
+)
+ANIMATION_TIMEOUT = (
+    "⏱ This file took too long to convert. Please try a shorter one."
+)
+ANIMATION_VERIFY_FAILED = (
+    "⚠️ The converted file didn't pass my checks, so I didn't send it. "
+    "Please try again."
+)
+
+
+def animation_clip_prompt(duration: float, clip_seconds: float) -> str:
+    return (
+        f"🎞 This video is {format_clock(duration)} long.\n\n"
+        f"A GIF should be short, so I'll use {round(clip_seconds)} seconds of it.\n\n"
+        "Which part?"
+    )
+
+
+def animation_gif_summary(*, width: int, height: int, frame_rate: float, seconds: float) -> str:
+    return (
+        "🎞 <b>GIF</b>\n"
+        f"{width}×{height} • {round(frame_rate)} fps • {format_clock(seconds)}"
+    )
+
+
+def animation_progress(percent: int) -> str:
+    return f"{ANIMATION_PROCESSING} {percent}%"
+
+
+# --- Make Sticker -----------------------------------------------------------
+STICKER_MAKE_PROMPT = (
+    "🏷 Send me an image and I'll turn it into a Telegram sticker.\n\n"
+    "PNG with transparency works best, but JPG and WEBP are also supported."
+)
+STICKER_MAKE_STYLE_PROMPT = "Choose a style:"
+STICKER_MAKE_PROCESSING = "⏳ Making your sticker..."
+STICKER_MAKE_DONE = (
+    "✅ Your sticker is ready. Forward it anywhere, or save it to your favourites."
+)
+STICKER_MAKE_CHOICE_EXPIRED = "This choice has expired. Please send the image again."
+
+BTN_STICKER_CLEAN = "✨ Clean"
+BTN_STICKER_WHITE_OUTLINE = "⚪ White Outline"
+BTN_STICKER_BLACK_OUTLINE = "⚫ Black Outline"
+BTN_STICKER_MAKE_AGAIN = "🏷 Make Another"
+
+STICKER_MAKE_UNSUPPORTED = (
+    "⚠️ I can't make a sticker from that. Send a PNG, JPG or WEBP image — as a "
+    "photo or as a File."
+)
+STICKER_MAKE_TOO_SMALL = (
+    "⚠️ That image is too small to become a sticker. Send one at least 32 "
+    "pixels on each side — a few hundred is better."
+)
+STICKER_MAKE_CORRUPT = (
+    "⚠️ I couldn't read this image. It may be damaged. Please try another one."
+)
+STICKER_MAKE_SEND_FAILED = (
+    "⚠️ Telegram didn't accept the sticker. Please try another image."
+)
+
+# --- Extract Frame ----------------------------------------------------------
+FRAME_PROMPT = (
+    "🖼 Send me a video and I'll extract a frame from it.\n\n"
+    "For the best quality, send it as a File."
+)
+FRAME_POSITION_PROMPT = "Which frame?"
+FRAME_FORMAT_PROMPT = "Which format?"
+FRAME_CUSTOM_TIME_PROMPT = (
+    "⌨️ Send the time, as seconds or mm:ss.\n\n"
+    "For example: <code>12</code> or <code>1:05</code>."
+)
+FRAME_TIME_REJECTED = (
+    "⚠️ I couldn't read that as a time inside this video. Send seconds "
+    "(<code>12</code>) or mm:ss (<code>1:05</code>)."
+)
+FRAME_PROCESSING = "⏳ Extracting the frame..."
+FRAME_CHOICE_EXPIRED = "This choice has expired. Please send the video again."
+
+BTN_FRAME_FIRST = "🎬 First Frame"
+BTN_FRAME_MIDDLE = "⏱ Middle Frame"
+BTN_FRAME_QUARTER = "📍 25%"
+BTN_FRAME_THREE_QUARTER = "📍 75%"
+BTN_FRAME_CUSTOM = "⌨️ Custom Time"
+BTN_FRAME_JPG = "JPG"
+BTN_FRAME_PNG = "PNG"
+BTN_FRAME_AGAIN = "🖼 Extract Another"
+
+FRAME_UNSUPPORTED = (
+    "⚠️ I can't extract a frame from that. Send a video (MP4, MOV, WEBM, MKV…) "
+    "— as a video or as a File."
+)
+FRAME_CORRUPT = (
+    "⚠️ I couldn't read this video. It may be damaged. Please try another one."
+)
+FRAME_TIMEOUT = "⏱ This video took too long to read. Please try a shorter one."
+FRAME_NOT_FOUND = (
+    "⚠️ There's no frame at that moment. Try another position."
+)
+FRAME_VERIFY_FAILED = (
+    "⚠️ The extracted frame didn't pass my checks, so I didn't send it. "
+    "Please try another position."
+)
+
+
+def frame_done(*, seconds: float, width: int, height: int, image_format: str) -> str:
+    return (
+        "✅ Frame extracted\n\n"
+        f"At: {format_clock(seconds)}\n"
+        f"Size: {width}×{height}\n"
+        f"Format: {image_format.upper()}"
+    )
+
 # --- Batch mode -------------------------------------------------------------
 BATCH_PROMPT = (
     "📦 Send me multiple photos or videos.\n\n"
@@ -690,6 +907,9 @@ def stats_report(stats) -> str:
         f"📦 Batches: {stats.batches}",
         f"🧹 Metadata cleans: {stats.metadata_cleans}",
         f"✏️ Metadata changes: {stats.metadata_changes}",
+        f"🎞 GIF/MP4 conversions: {stats.conversions}",
+        f"🏷 Stickers made: {stats.stickers_made}",
+        f"🖼 Frames extracted: {stats.frames}",
         f"🎭 Sticker searches: {stats.sticker_searches}",
         "",
         f"🚀 Atreox CTA clicks: {stats.cta_clicks}",

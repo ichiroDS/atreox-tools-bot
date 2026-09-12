@@ -29,7 +29,14 @@ from app.services.media.optimizer import (
     optimized_filename,
     plan_video,
 )
-from app.services.media.watermark import WatermarkService, WatermarkSpec, watermarked_filename
+from app.services.media.optimizer import IMAGE_EXTENSIONS
+from app.services.media.watermark import (
+    LOGO_FILENAME,
+    LogoSpec,
+    WatermarkService,
+    WatermarkSpec,
+    watermarked_filename,
+)
 from app.services.telegram_files import FetchedFile, IncomingFile
 from app.utils.temp_files import JobWorkspace
 
@@ -138,19 +145,42 @@ class CleanMetadataProcessor:
 
 
 class WatermarkProcessor:
-    """Draws the same watermark on every file, via the Watermark service."""
+    """Draws the same watermark on every file, via the Watermark service.
+
+    The mark is either a line of text or a logo. A logo travels as bytes (a
+    saved preset holds them in the database) and is written into each item's
+    own workspace, so it is cleaned up with everything else.
+    """
 
     job_type = JobType.WATERMARK
 
-    def __init__(self, service: WatermarkService, spec: WatermarkSpec) -> None:
+    def __init__(
+        self,
+        service: WatermarkService,
+        spec: WatermarkSpec | LogoSpec,
+        *,
+        logo: bytes | None = None,
+        logo_format: str = "png",
+    ) -> None:
         self._service = service
         self._spec = spec
+        self._logo = logo
+        self._logo_format = logo_format
 
     async def run(self, fetched, workspace, incoming, *, job_id=None) -> ItemOutput:
         analysis = await self._service.analyze(fetched.path, job_id=job_id)
-        result = await self._service.apply(
-            fetched.path, workspace, analysis, self._spec, job_id=job_id
-        )
+        if isinstance(self._spec, LogoSpec) and self._logo:
+            mark = workspace.path / (
+                LOGO_FILENAME + IMAGE_EXTENSIONS.get(self._logo_format, ".png")
+            )
+            mark.write_bytes(self._logo)
+            result = await self._service.apply_logo(
+                fetched.path, workspace, analysis, self._spec, mark, job_id=job_id
+            )
+        else:
+            result = await self._service.apply(
+                fetched.path, workspace, analysis, self._spec, job_id=job_id
+            )
         image_format = None if isinstance(analysis, VideoAnalysis) else analysis.format
         return ItemOutput(
             path=result.path,

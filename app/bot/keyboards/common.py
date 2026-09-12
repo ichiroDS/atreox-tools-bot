@@ -9,10 +9,11 @@ from app.bot import texts
 from app.bot.callbacks import MenuCallback
 
 
-# Seven tools would be a long column, so the menu is paired by what the tools
+# Ten tools would be a long column, so the menu is paired by what the tools
 # are *for*: the two "make something native for Telegram" ones, the two that
-# work on the file itself, the two that brand or bulk-process, then discovery.
-_MAIN_MENU_ROWS = 2, 2, 2, 1, 2
+# work on the file itself, the two that brand or bulk-process, the two that
+# change the format, then the two about stickers, then discovery.
+_MAIN_MENU_ROWS = 2, 2, 2, 2, 2, 2
 
 
 def main_menu() -> InlineKeyboardMarkup:
@@ -23,6 +24,11 @@ def main_menu() -> InlineKeyboardMarkup:
     builder.button(text=texts.BTN_OPTIMIZE, callback_data=MenuCallback(action="optimize"))
     builder.button(text=texts.BTN_WATERMARK, callback_data=MenuCallback(action="watermark"))
     builder.button(text=texts.BTN_BATCH, callback_data=MenuCallback(action="batch"))
+    builder.button(text=texts.BTN_ANIMATION, callback_data=MenuCallback(action="animation"))
+    builder.button(text=texts.BTN_FRAME, callback_data=MenuCallback(action="frame"))
+    builder.button(
+        text=texts.BTN_MAKE_STICKER, callback_data=MenuCallback(action="make_sticker")
+    )
     builder.button(text=texts.BTN_STICKERS, callback_data=MenuCallback(action="stickers"))
     # A direct link: one tap to the site, as intended for the menu entry.
     builder.button(text=texts.BTN_GROW, url=texts.ATREOX_URL)

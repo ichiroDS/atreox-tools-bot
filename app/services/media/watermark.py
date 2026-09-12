@@ -205,6 +205,43 @@ class WatermarkSpec:
             return None
 
 
+@dataclass(frozen=True)
+class LogoSpec:
+    """A picture mark instead of a line of text: same placement vocabulary."""
+
+    position: Position = DEFAULT_POSITION
+    size: Size = DEFAULT_SIZE
+    opacity: int = DEFAULT_OPACITY
+
+    @property
+    def alpha(self) -> float:
+        return max(0.05, min(100, self.opacity)) / 100
+
+    def to_dict(self) -> dict:
+        return {
+            "kind": "logo",
+            "position": self.position.value,
+            "size": self.size.value,
+            "opacity": self.opacity,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict | None) -> LogoSpec | None:
+        if not payload or payload.get("kind") != "logo":
+            return None
+        try:
+            return cls(
+                position=Position(payload.get("position", DEFAULT_POSITION.value)),
+                size=Size(payload.get("size", DEFAULT_SIZE.value)),
+                opacity=int(payload.get("opacity", DEFAULT_OPACITY)),
+            )
+        except (TypeError, ValueError):
+            return None
+
+
+AnySpec = WatermarkSpec | LogoSpec
+
+
 def resolve_font(
     configured: str | None = None,
     *,
@@ -279,6 +316,88 @@ def plan_layout(width: int, height: int, spec: WatermarkSpec, font_path: str) ->
         padding=padding,
         shadow_offset=max(1, round(font_size * _SHADOW_RATIO)),
     )
+
+
+# --- logo geometry ------------------------------------------------------------
+# A logo is sized as a share of the frame *width* - a mark that looks right on a
+# landscape video looks right on a portrait one at the same share - and then
+# capped by height, so a tall narrow logo cannot run down the whole frame.
+LOGO_SIZE_RATIOS: dict[Size, float] = {Size.S: 0.10, Size.M: 0.15, Size.L: 0.22}
+_LOGO_MAX_HEIGHT_RATIO = 0.30
+MIN_LOGO_SIDE = 8
+
+# What a logo upload may be. Kept deliberately small: this is a brand mark, and
+# it is stored in the database when it is saved as a preset.
+LOGO_FORMATS = ("png", "webp", "jpeg")
+MAX_LOGO_BYTES = 1024 * 1024
+MIN_LOGO_SOURCE_SIDE = 16
+MAX_LOGO_PIXELS = 4096 * 4096
+
+LOGO_FILENAME = "watermark_logo"
+
+
+def validate_logo(analysis: Analysis, *, max_bytes: int = MAX_LOGO_BYTES) -> ImageAnalysis:
+    """The upload has to be a small still picture, or it is not a logo."""
+    if not isinstance(analysis, ImageAnalysis) or analysis.format not in LOGO_FORMATS:
+        raise MediaProcessingError(ProcessingErrorCode.UNSUPPORTED, "a logo must be an image")
+    if analysis.size_bytes > max_bytes:
+        raise MediaProcessingError(
+            ProcessingErrorCode.TOO_LARGE, f"{analysis.size_bytes} bytes is too big for a logo"
+        )
+    if min(analysis.width, analysis.height) < MIN_LOGO_SOURCE_SIDE:
+        raise MediaProcessingError(
+            ProcessingErrorCode.UNSUPPORTED, f"{analysis.width}x{analysis.height} is too small"
+        )
+    if analysis.width * analysis.height > MAX_LOGO_PIXELS:
+        raise MediaProcessingError(
+            ProcessingErrorCode.TOO_LARGE, f"{analysis.width}x{analysis.height} is too detailed"
+        )
+    return analysis
+
+
+@dataclass(frozen=True)
+class LogoLayout:
+    """Where the logo goes on one particular frame, in pixels."""
+
+    width: int
+    height: int
+    x: int
+    y: int
+    padding: int
+
+
+def plan_logo_layout(
+    frame_width: int, frame_height: int, logo_width: int, logo_height: int, spec: LogoSpec
+) -> LogoLayout:
+    """Scale the mark to its share of the frame and inset it from the edge."""
+    if logo_width <= 0 or logo_height <= 0:
+        raise MediaProcessingError(ProcessingErrorCode.UNSUPPORTED, "the logo has no size")
+    padding = padding_for(frame_width, frame_height)
+
+    width = max(MIN_LOGO_SIDE, round(frame_width * LOGO_SIZE_RATIOS[spec.size]))
+    height = max(MIN_LOGO_SIDE, round(width * logo_height / logo_width))
+
+    height_cap = max(MIN_LOGO_SIDE, round(frame_height * _LOGO_MAX_HEIGHT_RATIO))
+    if height > height_cap:
+        width = max(MIN_LOGO_SIDE, round(height_cap * logo_width / logo_height))
+        height = height_cap
+    # Never wider than the frame it sits on, padding included.
+    width_cap = max(MIN_LOGO_SIDE, frame_width - 2 * padding)
+    if width > width_cap:
+        height = max(MIN_LOGO_SIDE, round(width_cap * logo_height / logo_width))
+        width = width_cap
+
+    right = max(0, frame_width - width - padding)
+    bottom = max(0, frame_height - height - padding)
+    centre = max(0, (frame_width - width) // 2)
+    x, y = {
+        Position.TOP_LEFT: (padding, padding),
+        Position.TOP_RIGHT: (right, padding),
+        Position.BOTTOM_LEFT: (padding, bottom),
+        Position.BOTTOM_RIGHT: (right, bottom),
+        Position.BOTTOM_CENTER: (centre, bottom),
+    }[spec.position]
+    return LogoLayout(width=width, height=height, x=x, y=y, padding=padding)
 
 
 # --- video ------------------------------------------------------------------
@@ -427,7 +546,106 @@ def build_video_args(
     return args
 
 
-def verify_video(output: dict[str, Any], analysis: VideoAnalysis, plan: VideoPlan) -> None:
+@dataclass(frozen=True)
+class LogoVideoPlan:
+    """The same encode as the text path, drawing a picture instead of a line."""
+
+    width: int
+    height: int
+    layout: LogoLayout
+    threads: int
+    copy_audio: bool
+    has_audio: bool
+    maxrate: int | None
+    x264_preset: str
+    lookahead: int
+
+
+def plan_logo_video(
+    analysis: VideoAnalysis, spec: LogoSpec, logo_width: int, logo_height: int
+) -> LogoVideoPlan:
+    width, height = _even(analysis.width), _even(analysis.height)
+    preset, lookahead = (
+        _LARGE_FRAME_ENCODER if width * height > LARGE_FRAME_PIXELS else _DEFAULT_ENCODER
+    )
+    return LogoVideoPlan(
+        width=width,
+        height=height,
+        layout=plan_logo_layout(width, height, logo_width, logo_height, spec),
+        threads=encode_threads(width, height),
+        copy_audio=analysis.audio_codec in _COPYABLE_AUDIO,
+        has_audio=analysis.has_audio,
+        maxrate=analysis.video_bitrate or None,
+        x264_preset=preset,
+        lookahead=lookahead,
+    )
+
+
+def build_logo_filtergraph(plan: LogoVideoPlan, spec: LogoSpec) -> str:
+    """Scale the logo, dim it to the chosen opacity, lay it over every frame.
+
+    ``colorchannelmixer=aa`` scales the alpha channel the logo already has, so a
+    transparent PNG stays transparent and nothing gains a background box.
+    """
+    layout = plan.layout
+    return (
+        f"[0:v]scale={plan.width}:{plan.height},setsar=1[base];"
+        f"[1:v]scale={layout.width}:{layout.height}:flags=lanczos,format=rgba,"
+        f"colorchannelmixer=aa={spec.alpha:.2f}[mark];"
+        f"[base][mark]overlay={layout.x}:{layout.y}:format=auto,format=yuv420p[out]"
+    )
+
+
+def build_logo_video_args(
+    ffmpeg_bin: str,
+    source: Path,
+    logo: Path,
+    destination: Path,
+    analysis: VideoAnalysis,
+    plan: LogoVideoPlan,
+    spec: LogoSpec,
+) -> list[str]:
+    """Overlay the logo for the whole duration; length, size and sound unchanged."""
+    threads = str(plan.threads)
+    args = [
+        ffmpeg_bin, "-y", "-hide_banner", "-nostdin",
+        "-loglevel", "error", "-nostats", "-progress", "pipe:1",
+        "-threads", threads,
+        "-i", str(source),
+        "-i", str(logo),
+        "-filter_threads", threads,
+        "-filter_complex", build_logo_filtergraph(plan, spec),
+        "-map", "[out]",
+    ]
+    if plan.has_audio and analysis.audio_stream is not None:
+        args += ["-map", f"0:{analysis.audio_stream}"]
+    args += [
+        "-sn", "-dn",
+        "-map_metadata", "-1",
+        "-map_chapters", "-1",
+        "-c:v", "libx264",
+        "-preset", plan.x264_preset,
+        "-threads", threads,
+        "-rc-lookahead", str(plan.lookahead),
+        "-profile:v", "high",
+        "-crf", str(VIDEO_CRF),
+        "-metadata:s:v", "rotate=0",
+    ]
+    if plan.maxrate:
+        args += ["-maxrate", str(plan.maxrate), "-bufsize", str(plan.maxrate * 2)]
+    if not plan.has_audio:
+        args += ["-an"]
+    elif plan.copy_audio:
+        args += ["-c:a", "copy"]
+    else:
+        args += ["-c:a", "aac", "-b:a", "160k"]
+    args += ["-movflags", "+faststart", "-fflags", "+bitexact", "-f", "mp4", str(destination)]
+    return args
+
+
+def verify_video(
+    output: dict[str, Any], analysis: VideoAnalysis, plan: VideoPlan | LogoVideoPlan
+) -> None:
     fmt = output.get("format") or {}
     streams = output.get("streams") or []
     videos = [s for s in streams if s.get("codec_type") == "video"]
@@ -530,6 +748,132 @@ class WatermarkService:
             return await self._apply_to_video(source, workspace, analysis, spec, job_id, on_progress)
         return await self._apply_to_image(source, workspace, analysis, spec, job_id)
 
+    async def apply_logo(
+        self,
+        source: Path,
+        workspace: JobWorkspace,
+        analysis: Analysis,
+        spec: LogoSpec,
+        logo: Path,
+        *,
+        logo_analysis: ImageAnalysis | None = None,
+        job_id: str | None = None,
+        on_progress: Any | None = None,
+    ) -> WatermarkedMedia:
+        """The same job as :meth:`apply`, with a picture mark instead of text."""
+        if logo_analysis is None:
+            logo_analysis = validate_logo(
+                parse_analysis(await self._probe(logo, job_id=job_id), logo.stat().st_size)
+            )
+        if isinstance(analysis, VideoAnalysis):
+            return await self._logo_on_video(
+                source, workspace, analysis, spec, logo, logo_analysis, job_id, on_progress
+            )
+        return await self._logo_on_image(
+            source, workspace, analysis, spec, logo, logo_analysis, job_id
+        )
+
+    async def _logo_on_video(
+        self, source, workspace, analysis, spec, logo, logo_analysis, job_id, on_progress
+    ):
+        plan = plan_logo_video(analysis, spec, logo_analysis.width, logo_analysis.height)
+        destination = workspace.new_file(".mp4", prefix="wm_")
+        args = build_logo_video_args(
+            self._ffmpeg_bin, source, logo, destination, analysis, plan, spec
+        )
+        logger.info(
+            "logo watermark encode %dx%d mark=%dx%d at %d,%d threads=%d",
+            plan.width, plan.height, plan.layout.width, plan.layout.height,
+            plan.layout.x, plan.layout.y, plan.threads, extra={"job_id": job_id or "-"},
+        )
+
+        async def on_line(line: str) -> None:
+            if on_progress is None or not analysis.duration or not line.startswith("out_time_us="):
+                return
+            try:
+                position = max(0.0, float(line.partition("=")[2])) / 1_000_000
+            except ValueError:
+                return
+            await on_progress(min(1.0, position / analysis.duration))
+
+        try:
+            await run_command_streaming(
+                args, timeout=self._timeout, on_line=on_line, job_id=job_id
+            )
+        except CommandNotFound as exc:
+            raise MediaProcessingError(ProcessingErrorCode.TOOL_MISSING, str(exc)) from exc
+        except CommandTimeout as exc:
+            raise MediaProcessingError(ProcessingErrorCode.TIMEOUT, str(exc)) from exc
+        except CommandFailed as exc:
+            raise MediaProcessingError(classify_failure(exc.stderr, exc.returncode), str(exc)) from exc
+
+        self._ensure_written(destination)
+        verify_video(json.loads(await self._probe(destination, job_id=job_id)), analysis, plan)
+        size = destination.stat().st_size
+        logger.info("logo watermarked video ready (%d bytes)", size,
+                    extra={"job_id": job_id or "-"})
+        return WatermarkedMedia(
+            path=destination, size_bytes=size, filename=destination.name,
+            kind=MediaKind.VIDEO, width=plan.width, height=plan.height,
+        )
+
+    async def _logo_on_image(
+        self, source, workspace, analysis, spec, logo, logo_analysis, job_id
+    ):
+        layout = plan_logo_layout(
+            analysis.width, analysis.height, logo_analysis.width, logo_analysis.height, spec
+        )
+        destination = workspace.new_file(IMAGE_EXTENSIONS[analysis.format], prefix="wm_")
+        rendered = await self._run_worker(
+            workspace,
+            {
+                "mode": "logo",
+                "source": str(source),
+                "destination": str(destination),
+                "format": analysis.format,
+                "logo": str(logo),
+                "alpha": spec.alpha,
+                "logo_width": layout.width,
+                "logo_height": layout.height,
+                "x": layout.x,
+                "y": layout.y,
+            },
+            job_id=job_id,
+        )
+        self._ensure_written(destination)
+        verify_image(json.loads(await self._probe(destination, job_id=job_id)), analysis)
+        size = destination.stat().st_size
+        logger.info(
+            "logo watermarked %s ready (%dx%d, %d bytes)", analysis.format,
+            rendered.get("width"), rendered.get("height"), size,
+            extra={"job_id": job_id or "-"},
+        )
+        return WatermarkedMedia(
+            path=destination, size_bytes=size, filename=destination.name,
+            kind=MediaKind.IMAGE, width=int(rendered["width"]), height=int(rendered["height"]),
+        )
+
+    async def _run_worker(self, workspace: JobWorkspace, request: dict, *, job_id) -> dict:
+        """One Pillow worker run, with its request written into the workspace."""
+        request_file = workspace.path / "watermark.json"
+        request_file.write_text(json.dumps(request), encoding="utf-8")
+        try:
+            result = await run_command(
+                [self._python_bin, str(WORKER), str(request_file)],
+                timeout=self._timeout,
+                job_id=job_id,
+            )
+        except CommandNotFound as exc:
+            raise MediaProcessingError(ProcessingErrorCode.TOOL_MISSING, str(exc)) from exc
+        except CommandTimeout as exc:
+            raise MediaProcessingError(ProcessingErrorCode.TIMEOUT, str(exc)) from exc
+        except CommandFailed as exc:
+            code = WORKER_EXIT_CODES.get(exc.returncode) or classify_failure(
+                exc.stderr, exc.returncode
+            )
+            raise MediaProcessingError(code, str(exc)) from exc
+        return json.loads(result.stdout or "{}")
+
     async def _apply_to_video(self, source, workspace, analysis, spec, job_id, on_progress):
         plan = plan_video(analysis, spec, self.font_path)
         # Text and font live in the workspace; FFmpeg runs there and refers to
@@ -577,9 +921,10 @@ class WatermarkService:
     async def _apply_to_image(self, source, workspace, analysis, spec, job_id):
         layout = plan_layout(analysis.width, analysis.height, spec, self.font_path)
         destination = workspace.new_file(IMAGE_EXTENSIONS[analysis.format], prefix="wm_")
-        request = workspace.path / "watermark.json"
-        request.write_text(
-            json.dumps({
+        rendered = await self._run_worker(
+            workspace,
+            {
+                "mode": "text",
                 "source": str(source),
                 "destination": str(destination),
                 "format": analysis.format,
@@ -593,27 +938,10 @@ class WatermarkService:
                 "font_size": layout.font_size,
                 "padding": layout.padding,
                 "shadow_offset": layout.shadow_offset,
-            }),
-            encoding="utf-8",
+            },
+            job_id=job_id,
         )
-        try:
-            result = await run_command(
-                [self._python_bin, str(WORKER), str(request)],
-                timeout=self._timeout,
-                job_id=job_id,
-            )
-        except CommandNotFound as exc:
-            raise MediaProcessingError(ProcessingErrorCode.TOOL_MISSING, str(exc)) from exc
-        except CommandTimeout as exc:
-            raise MediaProcessingError(ProcessingErrorCode.TIMEOUT, str(exc)) from exc
-        except CommandFailed as exc:
-            code = WORKER_EXIT_CODES.get(exc.returncode) or classify_failure(
-                exc.stderr, exc.returncode
-            )
-            raise MediaProcessingError(code, str(exc)) from exc
-
         self._ensure_written(destination)
-        rendered = json.loads(result.stdout or "{}")
         verify_image(json.loads(await self._probe(destination, job_id=job_id)), analysis)
         size = destination.stat().st_size
         logger.info(

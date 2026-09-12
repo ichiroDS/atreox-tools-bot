@@ -10,7 +10,9 @@ from aiogram.filters.callback_data import CallbackData
 
 
 class MenuCallback(CallbackData, prefix="menu"):
-    action: str  # circle | voice | optimize | metadata | stickers | help | main
+    # circle | voice | optimize | metadata | watermark | batch | animation
+    # frame | make_sticker | stickers | help | privacy | cta | main
+    action: str
 
 
 class CircleCallback(CallbackData, prefix="crc"):
@@ -35,10 +37,26 @@ class BatchCallback(CallbackData, prefix="bt"):
 
 
 class WatermarkCallback(CallbackData, prefix="wm"):
-    # enter | presets | pos | style | size | opacity | apply | save | change
-    # detail | use | rename | edit | delete | delete_yes | new | back | cancel
+    # type | enter | logo | presets | pos | style | size | opacity | apply
+    # save | change | detail | use | rename | edit | delete | delete_yes | new
+    # back | cancel
     action: str
-    value: str = ""  # an enum value, or a preset id
+    value: str = ""  # an enum value, "text"/"logo", or a preset id
+
+
+class AnimationCallback(CallbackData, prefix="anm"):
+    action: str  # convert | clip | cancel
+    value: str = ""  # to_gif | to_mp4 | optimize_gif, or first | middle | custom
+
+
+class FrameCallback(CallbackData, prefix="frm"):
+    action: str  # pos | format | cancel
+    value: str = ""  # a position, or jpeg | png
+
+
+class MakeStickerCallback(CallbackData, prefix="mks"):
+    action: str  # style | cancel
+    value: str = ""  # clean | white_outline | black_outline
 
 
 class MetadataCallback(CallbackData, prefix="meta"):

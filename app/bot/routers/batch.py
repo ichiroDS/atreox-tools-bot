@@ -69,6 +69,7 @@ from app.services.media.metadata import MetadataService
 from app.services.media.optimizer import MediaOptimizerService, Preset
 from app.services.media.watermark import (
     OPACITIES,
+    LogoSpec,
     Position,
     Size,
     Style,
@@ -309,6 +310,23 @@ async def choose_watermark_preset(
         )
     if preset is None:
         await callback.answer(texts.WATERMARK_PRESET_GONE, show_alert=True)
+        return
+
+    if preset.is_logo:
+        # A saved logo brands the whole batch, image by image.
+        logo_spec = LogoSpec.from_dict({
+            "kind": "logo", "position": preset.position,
+            "size": preset.size, "opacity": preset.opacity,
+        })
+        await callback.answer()
+        await _start(
+            callback, state, bot=bot, settings=settings, session=session,
+            processor=WatermarkProcessor(
+                _watermark_service(settings), logo_spec,
+                logo=preset.logo, logo_format=preset.logo_format or "png",
+            ),
+            limiter=limiter, user=user, media_gate=media_gate,
+        )
         return
 
     spec = WatermarkSpec.from_dict({

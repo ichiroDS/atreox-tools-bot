@@ -1,15 +1,18 @@
 # Atreox Tools Bot
 
 A free Telegram utility bot for channel owners, creators and AI influencer
-operators. It ships six tools, plus a batch mode:
+operators. It ships nine tools, plus a batch mode:
 
 | Tool | What it does |
 | --- | --- |
 | 🎥 **Video → Circle** | Turns any video into a native Telegram video note (circle). |
 | 🎙 **Voice Note** | Turns an audio file, or the sound of a video, into a native Telegram voice message. |
 | 🗜 **Media Optimizer** | Shrinks photos and videos (Small / Balanced / High Quality) and returns them as a File. |
-| 🖼 **Watermark** | Draws a handle or custom line on photos and videos, with saved presets. |
+| 🖼 **Watermark** | Draws a handle, custom line or a logo image on photos and videos, with saved presets. |
 | 📦 **Batch Mode** | Runs Clean Metadata, Watermark or the Optimizer over many files in one go. |
+| 🎞 **GIF / MP4** | Turns a video into a GIF (or a chosen six seconds of it), and a GIF into a silent MP4. |
+| 🖼 **Extract Frame** | Pulls one still out of a video - first / 25 % / middle / 75 % / a typed time - as JPG or PNG. |
+| 🏷 **Make Sticker** | Turns an image into a real static Telegram sticker, optionally with a white or black outline. |
 | 🧹 **Metadata Studio** | Cleans metadata, or rewrites device / location / capture time. |
 | 🎭 **Sticker Finder** | Discovery: six stickers, each from a *different* pack, so the user can open and add the pack they like. |
 
@@ -194,9 +197,60 @@ Encoding reuses the optimizer's memory budget, and because a 4K frame is
 encoded *as* 4K, frames above 1080p switch to the light encoder (measured
 964 MB -> 352 MB, well inside the 1 GB container).
 
+**A logo instead of a line.** The same wizard takes a small image (PNG, WEBP or
+JPEG, up to 1 MB, validated as a real picture before anything is drawn). It is
+scaled to a share of the frame *width* (S 10 %, M 15 %, L 22 %), capped at 30 %
+of the frame height, and composited with its own alpha channel scaled by the
+chosen opacity - so a transparent PNG stays transparent and nothing gains a
+background box. Videos overlay it for the whole duration, at the same
+resolution, frame rate, duration and audio as the text path.
+
 Presets live in `watermark_presets` (max 10 per user, unique name per user) and
-store the text *and* the look, so a repeat is two taps. Every read and write is
-scoped to the owner's Telegram id.
+store the text *or* the logo image, plus the look, so a repeat is two taps. A
+logo preset keeps the image **in the database** (`kind`, `logo`, `logo_format`):
+the container's disk is ephemeral, so a logo saved on it would not survive a
+deploy. Every read and write is scoped to the owner's Telegram id.
+
+### GIF / MP4
+
+The file is probed first, so the buttons match what was actually sent: a video
+offers **GIF** and **MP4**, a GIF offers **MP4** and **Optimize GIF**.
+
+A GIF has no inter-frame compression worth the name, so the work is all in
+keeping the frame count and frame size down: 15 fps, 720 px on the long side,
+never upscaled, audio dropped, and anything longer than 15 seconds asks which
+six seconds to use (**First 6s / Middle 6s / a typed start time**). The palette
+is built in a *separate first pass* - the usual `split`/`palettegen` chain
+buffers every frame of the clip in memory, which a 1 GB container cannot
+afford. GIF → MP4 is H.264, silent, faststart, even dimensions, capped at
+30 fps. Optimize GIF re-palettes at 128 colours and is only sent when it is
+genuinely smaller; otherwise the original is kept and the user is told so.
+
+GIFs go back as Files (Telegram plays a `.gif` document inline anyway); MP4s go
+back as animations, falling back to a File if Telegram refuses that form.
+
+### Extract Frame
+
+A video, a moment (**first / 25 % / middle / 75 % / a typed time**, validated
+against the real duration), then JPG or PNG. FFmpeg seeks *before* the input, so
+one frame is decoded rather than the whole file, and the display matrix is
+applied while decoding - a phone video held upright gives an upright still,
+which is the one case where width and height swap. Nothing is scaled: the still
+is exactly the frame, and it goes back as a File named
+`atreox_frame_<name>.<jpg|png>` so Telegram does not recompress it.
+
+### Make Sticker
+
+Static stickers only - no packs are published, nothing is animated, and no
+background is invented. A Pillow worker in its own process trims fully
+transparent margins (so the subject fills the sticker), fits the picture to
+Telegram's 512 px box, and writes a WEBP under the 512 KB ceiling, stepping the
+quality down until it fits. **✨ Clean / ⚪ White Outline / ⚫ Black Outline**:
+an outline is drawn from the picture's own alpha channel, dilated and filled
+underneath the subject, so an opaque photo honestly gets a border rather than a
+guess at where its subject ends. The result is verified as Telegram would
+verify it and sent with `sendSticker` - and the reply is checked, because a
+sticker that arrives as a file is not what was asked for.
 
 ### Batch Mode
 
@@ -510,8 +564,8 @@ re-running the sync. Categories live in `app/services/stickers/catalog.py`.
 - **Successful / failed jobs** — `jobs` rows with status, sizes, and a stable
   internal `error_code` on failure.
 - **Watermark presets** — the only user content stored on purpose:
-  `watermark_presets` keeps the text and look a user asked to save, and
-  nothing else. Uploaded media is never stored.
+  `watermark_presets` keeps the text (or the small logo image) and the look a
+  user asked to save, and nothing else. Uploaded media is never stored.
 - **Batches** — `batch_started` / `batch_completed` events, plus the ordinary
   per-file `jobs` rows, so a batch never hides what it actually did.
 

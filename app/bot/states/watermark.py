@@ -5,9 +5,12 @@ from aiogram.fsm.state import State, StatesGroup
 
 class WatermarkStates(StatesGroup):
     waiting_for_media = State()
-    # The file is in hand; the text can be typed or taken from a preset.
+    # The file is in hand: text, a logo, or something already saved.
+    choosing_type = State()
+    # The text can be typed or taken from a preset.
     choosing_source = State()
     typing_text = State()
+    waiting_for_logo = State()
     choosing_position = State()
     choosing_style = State()
     choosing_size = State()

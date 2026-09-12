@@ -16,9 +16,12 @@ from aiogram.types import Chat, InlineKeyboardMarkup
 from aiogram.types import User as TelegramUser
 
 from app.bot import texts
+from app.bot.keyboards import animation as animation_keyboards
 from app.bot.keyboards import batch as batch_keyboards
 from app.bot.keyboards import circle as circle_keyboards
 from app.bot.keyboards import common as common_keyboards
+from app.bot.keyboards import frame as frame_keyboards
+from app.bot.keyboards import make_sticker as make_sticker_keyboards
 from app.bot.keyboards import metadata as metadata_keyboards
 from app.bot.keyboards import optimizer as optimizer_keyboards
 from app.bot.keyboards import stickers as sticker_keyboards
@@ -26,9 +29,12 @@ from app.bot.keyboards import voice as voice_keyboards
 from app.bot.keyboards import watermark as watermark_keyboards
 from app.bot.routers import (
     admin,
+    animation,
     batch,
     circle,
     fallback,
+    frame,
+    make_sticker,
     metadata,
     optimizer,
     start,
@@ -37,10 +43,13 @@ from app.bot.routers import (
     watermark,
 )
 from app.bot.states import (
+    AnimationStates,
     BatchStates,
     ChangeMetadataStates,
     CircleStates,
     CleanMetadataStates,
+    FrameStates,
+    MakeStickerStates,
     OptimizerStates,
     VoiceStates,
     WatermarkStates,
@@ -53,8 +62,14 @@ from app.services.media.watermark import OPACITIES
 USER = TelegramUser(id=42, is_bot=False, first_name="Tester")
 CHAT = Chat(id=42, type="private")
 
+PROBED_VIDEO = """{"format": {"format_name": "mov,mp4", "duration": "30"},
+ "streams": [{"codec_type": "video", "codec_name": "h264", "width": 3840,
+  "height": 2160, "index": 0, "avg_frame_rate": "60/1"}]}"""
+
+
 ALL_STATE_GROUPS = (
     CircleStates, VoiceStates, OptimizerStates, WatermarkStates, BatchStates,
+    AnimationStates, FrameStates, MakeStickerStates,
     CleanMetadataStates, ChangeMetadataStates,
 )
 ALL_STATES = [None] + [state.state for group in ALL_STATE_GROUPS for state in group.__states__]
@@ -78,6 +93,7 @@ def every_keyboard() -> list[tuple[str, InlineKeyboardMarkup]]:
         ("voice_forward_help", voice_keyboards.voice_forward_help()),
         ("optimizer_presets", optimizer_keyboards.preset_choices(["small", "balanced", "high"])),
         ("optimize_done", optimizer_keyboards.optimize_done()),
+        ("watermark_type", watermark_keyboards.type_choices()),
         ("watermark_source", watermark_keyboards.text_source_choices()),
         ("watermark_position", watermark_keyboards.position_choices()),
         ("watermark_style", watermark_keyboards.style_choices()),
@@ -86,6 +102,10 @@ def every_keyboard() -> list[tuple[str, InlineKeyboardMarkup]]:
         ("watermark_confirm", watermark_keyboards.confirmation_choices()),
         ("watermark_presets", watermark_keyboards.preset_list([preset])),
         ("watermark_preset_detail", watermark_keyboards.preset_detail(7, can_use=True)),
+        (
+            "watermark_logo_preset_detail",
+            watermark_keyboards.preset_detail(7, can_use=True, is_logo=True),
+        ),
         ("watermark_delete", watermark_keyboards.delete_confirmation(7)),
         ("watermark_done", watermark_keyboards.watermark_done()),
         ("batch_collecting", batch_keyboards.collecting()),
@@ -108,6 +128,17 @@ def every_keyboard() -> list[tuple[str, InlineKeyboardMarkup]]:
         ("metadata_change_done", metadata_keyboards.change_done_choices()),
         ("sticker_categories", sticker_keyboards.category_choices()),
         ("sticker_results", sticker_keyboards.result_controls("cute")),
+        (
+            "animation_conversions",
+            animation_keyboards.conversion_choices(["to_gif", "to_mp4", "optimize_gif"]),
+        ),
+        ("animation_clips", animation_keyboards.clip_choices()),
+        ("animation_done", animation_keyboards.animation_done()),
+        ("frame_positions", frame_keyboards.position_choices()),
+        ("frame_formats", frame_keyboards.format_choices()),
+        ("frame_done", frame_keyboards.frame_done()),
+        ("sticker_styles", make_sticker_keyboards.style_choices()),
+        ("make_sticker_done", make_sticker_keyboards.sticker_done()),
     ]
     return keyboards
 
@@ -141,7 +172,8 @@ async def _matches(handler, event, raw_state) -> bool:
 # the same routers in dispatch order without attaching them again.
 ROUTERS = (
     start.router, circle.router, voice.router, optimizer.router, watermark.router,
-    batch.router, metadata.router, stickers.router, admin.router, fallback.router,
+    batch.router, animation.router, frame.router, make_sticker.router,
+    metadata.router, stickers.router, admin.router, fallback.router,
 )
 
 
@@ -208,7 +240,9 @@ def test_every_cancel_button_points_at_a_cancel_handler():
     }
     # Every flow that shows a Cancel uses its own namespace, so the cancel
     # lands in the flow that owns the state it has to clear.
-    assert {payload.split(":")[0] for payload in cancels} == {"crc", "meta", "wm", "opt", "bt"}
+    assert {payload.split(":")[0] for payload in cancels} == {
+        "crc", "meta", "wm", "opt", "bt", "anm", "frm", "mks",
+    }
 
 
 # --- one product, one vocabulary ---------------------------------------------------
@@ -246,12 +280,13 @@ def test_every_tool_in_the_menu_is_explained_in_help():
 
 def test_the_menu_reads_as_pairs_not_one_long_column():
     rows = common_keyboards.main_menu().inline_keyboard
-    assert [len(row) for row in rows] == [2, 2, 2, 1, 2]
+    assert [len(row) for row in rows] == [2, 2, 2, 2, 2, 2]
     assert [button.text for button in rows[0]] == [texts.BTN_CIRCLE, texts.BTN_VOICE]
     assert [button.text for button in rows[1]] == [texts.BTN_METADATA, texts.BTN_OPTIMIZE]
     assert [button.text for button in rows[2]] == [texts.BTN_WATERMARK, texts.BTN_BATCH]
-    assert [button.text for button in rows[3]] == [texts.BTN_STICKERS]
-    assert [button.text for button in rows[4]] == [texts.BTN_GROW, texts.BTN_HELP]
+    assert [button.text for button in rows[3]] == [texts.BTN_ANIMATION, texts.BTN_FRAME]
+    assert [button.text for button in rows[4]] == [texts.BTN_MAKE_STICKER, texts.BTN_STICKERS]
+    assert [button.text for button in rows[5]] == [texts.BTN_GROW, texts.BTN_HELP]
 
 
 def test_help_and_the_menu_list_the_tools_in_the_same_order():
@@ -282,6 +317,9 @@ def test_every_job_type_is_reported_in_stats():
         JobType.WATERMARK: "Watermarks",
         JobType.METADATA_CLEAN: "Metadata cleans",
         JobType.METADATA_CHANGE: "Metadata changes",
+        JobType.CONVERT: "GIF/MP4 conversions",
+        JobType.MAKE_STICKER: "Stickers made",
+        JobType.EXTRACT_FRAME: "Frames extracted",
     }
     for job_type, label in expected.items():
         assert label in report, f"{job_type.value} is processed but never reported"
@@ -317,8 +355,19 @@ def test_every_ffmpeg_invocation_states_a_thread_budget():
     in a 1 GB container is how an encode gets OOM-killed."""
     from pathlib import Path as _Path
 
+    from app.services.media.animation import (
+        Clip,
+        build_gif_args,
+        build_mp4_args,
+        build_palette_args,
+        parse_animation_source,
+        plan_gif,
+        plan_mp4,
+    )
     from app.services.media.base import MAX_ENCODE_THREADS
     from app.services.media.circle import build_circle_ffmpeg_args
+    from app.services.media.frame import Position as FramePosition
+    from app.services.media.frame import build_frame_args, plan_frame
     from app.services.media.optimizer import VideoAnalysis, build_video_args, plan_video
     from app.services.media.optimizer import Preset
     from app.services.media.voice import build_voice_ffmpeg_args
@@ -332,6 +381,8 @@ def test_every_ffmpeg_invocation_states_a_thread_budget():
         video_stream=0, frame_rate=60.0, video_bitrate=40_000_000, bitrate_declared=True,
     )
     spec = WatermarkSpec("@handle")
+    animation_source = parse_animation_source(PROBED_VIDEO, 10 ** 8)
+    gif_plan = plan_gif(animation_source, Clip(0.0, 6.0))
     builds = {
         "circle": build_circle_ffmpeg_args("ffmpeg", source, destination, size=384,
                                            duration_limit=60),
@@ -340,6 +391,12 @@ def test_every_ffmpeg_invocation_states_a_thread_budget():
                                       plan_video(analysis, Preset.BALANCED)),
         "watermark": build_watermark_args("ffmpeg", source, destination, analysis,
                                           plan_watermark(analysis, spec, resolve_font()), spec),
+        "gif palette": build_palette_args("ffmpeg", source, _Path("/p.png"), gif_plan),
+        "gif": build_gif_args("ffmpeg", source, _Path("/p.png"), _Path("/out.gif"), gif_plan),
+        "animation mp4": build_mp4_args("ffmpeg", source, destination, animation_source,
+                                        plan_mp4(animation_source)),
+        "frame": build_frame_args("ffmpeg", source, _Path("/out.jpg"), analysis,
+                                  plan_frame(analysis, FramePosition.MIDDLE, "jpeg")),
     }
     for name, args in builds.items():
         assert "-threads" in args, f"{name} lets FFmpeg choose its own thread count"

@@ -15,6 +15,25 @@ def _cancel(builder: InlineKeyboardBuilder) -> None:
     builder.button(text=texts.BTN_CANCEL, callback_data=WatermarkCallback(action="cancel"))
 
 
+def type_choices() -> InlineKeyboardMarkup:
+    """Text, a logo, or something already saved."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=texts.BTN_WATERMARK_TYPE_TEXT,
+        callback_data=WatermarkCallback(action="type", value="text"),
+    )
+    builder.button(
+        text=texts.BTN_WATERMARK_TYPE_LOGO,
+        callback_data=WatermarkCallback(action="type", value="logo"),
+    )
+    builder.button(
+        text=texts.BTN_WATERMARK_PRESETS, callback_data=WatermarkCallback(action="presets")
+    )
+    _cancel(builder)
+    builder.adjust(2, 1, 1)
+    return builder.as_markup()
+
+
 def text_source_choices() -> InlineKeyboardMarkup:
     """Type a watermark, or reuse a saved one."""
     builder = InlineKeyboardBuilder()
@@ -86,7 +105,8 @@ def preset_list(presets, *, back_action: str = "back") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for preset in presets:
         builder.button(
-            text=f"💾 {preset.name}",
+            # A logo preset is marked as one, so a list of ten is readable.
+            text=f"{'🖼' if getattr(preset, 'is_logo', False) else '💾'} {preset.name}",
             callback_data=WatermarkCallback(action="detail", value=str(preset.id)),
         )
     builder.button(
@@ -97,8 +117,11 @@ def preset_list(presets, *, back_action: str = "back") -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def preset_detail(preset_id: int, *, can_use: bool) -> InlineKeyboardMarkup:
-    """Use it on the file in flight (when there is one), or manage it."""
+def preset_detail(preset_id: int, *, can_use: bool, is_logo: bool = False) -> InlineKeyboardMarkup:
+    """Use it on the file in flight (when there is one), or manage it.
+
+    A saved logo has no text to edit, so that button is simply not offered.
+    """
     builder = InlineKeyboardBuilder()
     value = str(preset_id)
     if can_use:
@@ -109,10 +132,11 @@ def preset_detail(preset_id: int, *, can_use: bool) -> InlineKeyboardMarkup:
         text=texts.BTN_WATERMARK_RENAME,
         callback_data=WatermarkCallback(action="rename", value=value),
     )
-    builder.button(
-        text=texts.BTN_WATERMARK_EDIT_TEXT,
-        callback_data=WatermarkCallback(action="edit", value=value),
-    )
+    if not is_logo:
+        builder.button(
+            text=texts.BTN_WATERMARK_EDIT_TEXT,
+            callback_data=WatermarkCallback(action="edit", value=value),
+        )
     builder.button(
         text=texts.BTN_WATERMARK_DELETE,
         callback_data=WatermarkCallback(action="delete", value=value),

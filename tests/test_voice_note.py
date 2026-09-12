@@ -473,6 +473,7 @@ def test_voice_note_sits_second_in_the_main_menu():
     assert [b.text for b in buttons] == [
         "🎥 Video → Circle", "🎙 Voice Note", "🧹 Metadata Studio",
         "🗜 Media Optimizer", "🖼 Watermark", "📦 Batch Mode",
+        "🎞 GIF / MP4", "🖼 Extract Frame", "🏷 Make Sticker",
         "🎭 Find Stickers", "🚀 Grow My Channel", "ℹ️ Help",
     ]
     assert buttons[1].callback_data == MenuCallback(action="voice").pack()

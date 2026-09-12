@@ -96,9 +96,26 @@ def _solid(mode: str, size: tuple[int, int], colour: str) -> Image.Image:
     return Image.new(mode, size, fill)  # type: ignore[arg-type]
 
 
+def _logo_tile(path: Path, size: tuple[int, int], alpha: float) -> Image.Image:
+    """The logo at its planned size, dimmed to the chosen opacity.
+
+    Its own alpha channel is scaled rather than replaced, so a transparent PNG
+    stays transparent and nothing gains a background box behind it.
+    """
+    with Image.open(path) as opened:
+        if getattr(opened, "n_frames", 1) > 1:
+            raise Unsupported("animated logo")
+        logo = opened.convert("RGBA")
+    logo = logo.resize((max(1, size[0]), max(1, size[1])), Image.LANCZOS)
+    if alpha < 0.999:
+        logo.putalpha(_dim(logo.getchannel("A"), alpha))
+    return logo
+
+
 def draw(request: dict) -> dict:
     source, destination = Path(request["source"]), Path(request["destination"])
     image_format = request["format"]
+    logo_mode = request.get("mode") == "logo"
     Image.MAX_IMAGE_PIXELS = max(MAX_PIXELS.values())
     warnings.simplefilter("ignore", Image.DecompressionBombWarning)
 
@@ -114,18 +131,28 @@ def draw(request: dict) -> dict:
         image = ImageOps.exif_transpose(opened)
         image = image.convert(_drawing_mode(image))
 
-    font = ImageFont.truetype(request["font"], int(request["font_size"]))
-    mask, tile = _text_tile(request["text"], font, int(request["shadow_offset"]))
-    x, y = _placement(request["position"], image.size, tile, int(request["padding"]))
+    if logo_mode:
+        logo = _logo_tile(
+            Path(request["logo"]),
+            (int(request["logo_width"]), int(request["logo_height"])),
+            float(request["alpha"]),
+        )
+        # The logo's own alpha is the mask, so only its opaque pixels land.
+        image.paste(logo.convert(image.mode), (int(request["x"]), int(request["y"])),
+                    logo.getchannel("A"))
+    else:
+        font = ImageFont.truetype(request["font"], int(request["font_size"]))
+        mask, tile = _text_tile(request["text"], font, int(request["shadow_offset"]))
+        x, y = _placement(request["position"], image.size, tile, int(request["padding"]))
 
-    if request.get("shadow"):
-        shadow = Image.new("L", tile, 0)
-        offset = int(request["shadow_offset"])
-        shadow.paste(mask, (offset, offset))
-        image.paste(_solid(image.mode, tile, "black"), (x, y),
-                    _dim(shadow, float(request["shadow_alpha"])))
-    image.paste(_solid(image.mode, tile, request["colour"]), (x, y),
-                _dim(mask, float(request["alpha"])))
+        if request.get("shadow"):
+            shadow = Image.new("L", tile, 0)
+            offset = int(request["shadow_offset"])
+            shadow.paste(mask, (offset, offset))
+            image.paste(_solid(image.mode, tile, "black"), (x, y),
+                        _dim(shadow, float(request["shadow_alpha"])))
+        image.paste(_solid(image.mode, tile, request["colour"]), (x, y),
+                    _dim(mask, float(request["alpha"])))
 
     _save(image, destination, image_format, source, icc_profile)
     return {

@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 _ALLOWED_EXTENSIONS = frozenset(
     {
         ".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".tiff", ".dng",
+        ".gif",
         ".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".3gp",
     }
 )

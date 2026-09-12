@@ -84,15 +84,18 @@ async def test_prepare_database_brings_an_empty_database_to_head(tmp_path, monke
     }
     assert {"users", "jobs", "sticker_sets", "sticker_samples", "feature_events",
             "watermark_presets"} <= tables
-    # Schema is at the latest revision, with the CTA columns from 0002 and the
-    # watermark presets from 0003.
+    # Schema is at the latest revision, with the CTA columns from 0002, the
+    # watermark presets from 0003 and their logo columns from 0004.
     revision = connection.execute("select version_num from alembic_version").fetchone()
-    assert revision == ("0003",)
+    assert revision == ("0004",)
     columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
     assert {"cta_shown_count", "cta_last_shown_at"} <= columns
     preset_columns = {row[1] for row in connection.execute("PRAGMA table_info(watermark_presets)")}
     assert {"telegram_user_id", "name", "text", "position", "style", "size", "opacity",
-            "created_at", "updated_at"} <= preset_columns
+            "created_at", "updated_at",
+            # A preset is a line of text or a logo image, and the image lives
+            # here because the container's disk does not survive a deploy.
+            "kind", "logo", "logo_format"} <= preset_columns
     connection.close()
 
 

@@ -63,6 +63,9 @@ class WatermarkPresetsRepository:
         style: str,
         size: str,
         opacity: int,
+        kind: str = "text",
+        logo: bytes | None = None,
+        logo_format: str | None = None,
     ) -> WatermarkPreset:
         if await self.count_for(telegram_user_id) >= MAX_PRESETS_PER_USER:
             raise PresetLimitReached(str(MAX_PRESETS_PER_USER))
@@ -73,7 +76,10 @@ class WatermarkPresetsRepository:
         preset = WatermarkPreset(
             telegram_user_id=telegram_user_id,
             name=name,
+            kind=kind,
             text=text,
+            logo=logo,
+            logo_format=logo_format,
             position=position,
             style=style,
             size=size,
@@ -94,6 +100,13 @@ class WatermarkPresetsRepository:
 
     async def set_text(self, preset: WatermarkPreset, text: str) -> WatermarkPreset:
         preset.text = text
+        return await self._touch(preset)
+
+    async def set_logo(
+        self, preset: WatermarkPreset, logo: bytes, logo_format: str
+    ) -> WatermarkPreset:
+        preset.kind = "logo"
+        preset.logo, preset.logo_format = logo, logo_format
         return await self._touch(preset)
 
     async def set_look(

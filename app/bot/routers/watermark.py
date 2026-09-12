@@ -8,6 +8,7 @@ taps from the same watermark they used last time.
 
 from __future__ import annotations
 
+import base64
 import enum
 import logging
 import uuid
@@ -26,6 +27,7 @@ from app.bot.errors import busy_message, error_code, user_message
 from app.bot.keyboards.common import back_to_menu, main_menu
 from app.bot.keyboards.watermark import (
     confirmation_choices,
+    type_choices,
     delete_confirmation,
     opacity_choices,
     position_choices,
@@ -46,7 +48,14 @@ from app.bot.media_jobs import (
 from app.bot.promo import maybe_send_cta
 from app.bot.states import WatermarkStates
 from app.config import Settings
-from app.db.models import MAX_PRESETS_PER_USER, Feature, JobType, User, WatermarkPreset
+from app.db.models import (
+    MAX_LOGO_BYTES,
+    MAX_PRESETS_PER_USER,
+    Feature,
+    JobType,
+    User,
+    WatermarkPreset,
+)
 from app.db.repositories import (
     DuplicateName,
     EventsRepository,
@@ -58,7 +67,9 @@ from app.services.jobgate import MediaJobGate, ServerBusy, estimate_job_bytes
 from app.services.media.base import MediaProcessingError, ProcessingErrorCode
 from app.services.media.optimizer import VideoAnalysis
 from app.services.media.watermark import (
+    LOGO_FILENAME,
     OPACITIES,
+    LogoSpec,
     Position,
     Size,
     Style,
@@ -66,6 +77,7 @@ from app.services.media.watermark import (
     WatermarkSpec,
     WatermarkedMedia,
     clean_watermark_text,
+    validate_logo,
     watermarked_filename,
 )
 from app.services.ratelimit import RateLimiter
@@ -76,8 +88,10 @@ from app.services.telegram_files import (
     OutputTooLargeError,
     TelegramFileService,
     ensure_sendable,
+    extract_image_source,
     extract_optimizer_source,
 )
+from app.services.media.optimizer import IMAGE_EXTENSIONS
 from app.utils.temp_files import job_workspace
 
 logger = logging.getLogger(__name__)
@@ -93,6 +107,7 @@ _LONG_VIDEO_SECONDS = 120
 # them, and restarts the flow.
 _WIZARD_STATES = (
     WatermarkStates.waiting_for_media,
+    WatermarkStates.choosing_type,
     WatermarkStates.choosing_source,
     WatermarkStates.choosing_position,
     WatermarkStates.choosing_style,
@@ -109,6 +124,7 @@ _FAILURE_TEXTS: dict[ProcessingErrorCode, str] = {
     ProcessingErrorCode.TIMEOUT: texts.WATERMARK_TIMEOUT,
     ProcessingErrorCode.VERIFY_FAILED: texts.WATERMARK_VERIFY_FAILED,
     ProcessingErrorCode.TOOL_MISSING: texts.WATERMARK_FONT_MISSING,
+    ProcessingErrorCode.TOO_LARGE: texts.WATERMARK_LOGO_TOO_LARGE,
     ProcessingErrorCode.DISK_FULL: texts.OPTIMIZE_DISK_FULL,
     ProcessingErrorCode.PROCESS_KILLED: texts.OPTIMIZE_OUT_OF_MEMORY,
     ProcessingErrorCode.SEND_FAILED: texts.OPTIMIZE_SEND_FAILED,
@@ -160,8 +176,97 @@ async def handle_media(
 
     # Nothing is downloaded yet: the wizard only needs to remember which file.
     await state.set_data({"file": incoming.to_dict()})
+    await state.set_state(WatermarkStates.choosing_type)
+    await message.answer(texts.WATERMARK_TYPE_PROMPT_CHOICE, reply_markup=type_choices())
+
+
+# --- text or logo -------------------------------------------------------------
+
+
+@router.callback_query(WatermarkCallback.filter(F.action == "type"))
+async def choose_type(
+    callback: CallbackQuery,
+    callback_data: WatermarkCallback,
+    state: FSMContext,
+    session: AsyncSession | None = None,
+) -> None:
+    """Two ways to brand a file: a line of text, or a picture."""
+    if callback_data.value == "logo":
+        await state.update_data(kind="logo")
+        await state.set_state(WatermarkStates.waiting_for_logo)
+        if session is not None and callback.from_user is not None:
+            await EventsRepository(session).record(
+                callback.from_user.id, Feature.WATERMARK_LOGO
+            )
+        await _replace(callback, texts.WATERMARK_LOGO_PROMPT, back_to_menu())
+        return
+    await state.update_data(kind="text")
     await state.set_state(WatermarkStates.choosing_source)
-    await message.answer(texts.WATERMARK_ASK_TEXT, reply_markup=text_source_choices())
+    await _replace(callback, texts.WATERMARK_ASK_TEXT, text_source_choices())
+
+
+@router.message(WatermarkStates.waiting_for_logo)
+async def handle_logo(
+    message: Message,
+    state: FSMContext,
+    bot: Bot,
+    settings: Settings,
+    limiter: RateLimiter | None = None,
+) -> None:
+    """Fetch the logo now, check it really is a small image, and keep it.
+
+    The bytes travel with the wizard rather than a file reference: the same
+    bytes are what a preset would store, and what the encoder is handed.
+    """
+    incoming = extract_image_source(message)
+    if incoming is None:
+        await message.answer(texts.WATERMARK_LOGO_UNSUPPORTED, reply_markup=back_to_menu())
+        return
+
+    user_id = message.from_user.id if message.from_user else 0
+    if limiter is not None and not limiter.allow("media", user_id):
+        await message.answer(texts.RATE_LIMITED, reply_markup=back_to_menu())
+        return
+    if incoming.exceeds(MAX_LOGO_BYTES):
+        # Refused before a single byte is fetched.
+        await message.answer(texts.WATERMARK_LOGO_TOO_LARGE, reply_markup=back_to_menu())
+        return
+
+    job_id = uuid.uuid4()
+    files = TelegramFileService.from_settings(bot, settings)
+    service = _watermark_service(settings)
+    try:
+        async with job_workspace(settings.temp_root, job_id) as workspace:
+            fetched = None
+            try:
+                fetched = await files.fetch(incoming, workspace, job_id=str(job_id))
+                analysis = validate_logo(
+                    await service.analyze(fetched.path, job_id=str(job_id))
+                )
+                payload = fetched.path.read_bytes()
+            finally:
+                await files.release(fetched, job_id=str(job_id))
+    except MediaProcessingError as exc:
+        await message.answer(_logo_failure_text(exc), reply_markup=back_to_menu())
+        return
+    except Exception:  # noqa: BLE001 - anything else is simply not a logo
+        logger.warning("logo upload could not be read", extra={"job_id": str(job_id)})
+        await message.answer(texts.WATERMARK_LOGO_UNSUPPORTED, reply_markup=back_to_menu())
+        return
+
+    await state.update_data(
+        kind="logo",
+        logo=base64.b64encode(payload).decode("ascii"),
+        logo_format=analysis.format,
+    )
+    await state.set_state(WatermarkStates.choosing_position)
+    await message.answer(texts.WATERMARK_POSITION_PROMPT, reply_markup=position_choices())
+
+
+def _logo_failure_text(error: MediaProcessingError) -> str:
+    if error.code is ProcessingErrorCode.TOO_LARGE:
+        return texts.WATERMARK_LOGO_TOO_LARGE
+    return texts.WATERMARK_LOGO_UNSUPPORTED
 
 
 # --- the text ----------------------------------------------------------------
@@ -206,6 +311,11 @@ async def handle_position(
         await callback.answer(texts.ERROR_GENERIC, show_alert=True)
         return
     await state.update_data(position=callback_data.value)
+    if await _is_logo(state):
+        # A picture has no colour or shadow to choose - straight to the size.
+        await state.set_state(WatermarkStates.choosing_size)
+        await _replace(callback, texts.WATERMARK_SIZE_PROMPT, size_choices())
+        return
     await state.set_state(WatermarkStates.choosing_style)
     await _replace(callback, texts.WATERMARK_STYLE_PROMPT, style_choices())
 
@@ -255,6 +365,22 @@ async def change_look(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 async def _show_confirmation(callback: CallbackQuery, state: FSMContext) -> None:
+    if await _is_logo(state):
+        logo = await _logo_spec(state)
+        if logo is None:
+            await state.clear()
+            await callback.answer(texts.WATERMARK_CHOICE_EXPIRED, show_alert=True)
+            return
+        await state.set_state(WatermarkStates.confirming)
+        await _replace(
+            callback,
+            texts.watermark_logo_summary(
+                position=logo.position.value, size=logo.size.value, opacity=logo.opacity
+            ),
+            confirmation_choices(),
+        )
+        return
+
     spec = await _spec(state)
     if spec is None:
         await state.clear()
@@ -262,6 +388,33 @@ async def _show_confirmation(callback: CallbackQuery, state: FSMContext) -> None
         return
     await state.set_state(WatermarkStates.confirming)
     await _replace(callback, texts.watermark_summary(**spec.to_dict()), confirmation_choices())
+
+
+async def _is_logo(state: FSMContext) -> bool:
+    return (await state.get_data()).get("kind") == "logo"
+
+
+async def _logo_spec(state: FSMContext) -> LogoSpec | None:
+    """The look of a picture watermark - and proof the picture is still here."""
+    data = await state.get_data()
+    if not data.get("logo"):
+        return None
+    return LogoSpec.from_dict({
+        "kind": "logo",
+        "position": data.get("position", Position.BOTTOM_RIGHT.value),
+        "size": data.get("size", Size.M.value),
+        "opacity": data.get("opacity", 75),
+    })
+
+
+async def _logo_bytes(state: FSMContext) -> bytes | None:
+    raw = (await state.get_data()).get("logo")
+    if not raw:
+        return None
+    try:
+        return base64.b64decode(raw)
+    except (ValueError, TypeError):  # pragma: no cover - only a corrupted state
+        return None
 
 
 async def _spec(state: FSMContext) -> WatermarkSpec | None:
@@ -311,13 +464,24 @@ async def show_preset(
         await callback.answer(texts.WATERMARK_PRESET_GONE, show_alert=True)
         return
     data = await state.get_data()
+    can_use = bool(data.get("file"))
+    if preset.is_logo:
+        await _replace(
+            callback,
+            texts.watermark_logo_preset_detail(
+                name=preset.name, position=preset.position, size=preset.size,
+                opacity=preset.opacity,
+            ),
+            preset_detail(preset.id, can_use=can_use, is_logo=True),
+        )
+        return
     await _replace(
         callback,
         texts.watermark_preset_detail(
             name=preset.name, text=preset.text, position=preset.position,
             style=preset.style, size=preset.size, opacity=preset.opacity,
         ),
-        preset_detail(preset.id, can_use=bool(data.get("file"))),
+        preset_detail(preset.id, can_use=can_use),
     )
 
 
@@ -332,10 +496,19 @@ async def use_preset(
     if preset is None:
         await callback.answer(texts.WATERMARK_PRESET_GONE, show_alert=True)
         return
-    await state.update_data(
-        text=preset.text, position=preset.position, style=preset.style,
-        size=preset.size, opacity=preset.opacity,
-    )
+    if preset.is_logo:
+        await state.update_data(
+            kind="logo",
+            logo=base64.b64encode(preset.logo or b"").decode("ascii"),
+            logo_format=preset.logo_format or "png",
+            position=preset.position, size=preset.size, opacity=preset.opacity,
+        )
+    else:
+        await state.update_data(
+            kind="text",
+            text=preset.text, position=preset.position, style=preset.style,
+            size=preset.size, opacity=preset.opacity,
+        )
     await _show_confirmation(callback, state)
 
 
@@ -343,9 +516,16 @@ async def use_preset(
 async def save_preset(
     callback: CallbackQuery, state: FSMContext, session: AsyncSession | None = None
 ) -> None:
-    """Keep this watermark - text and look - for next time."""
+    """Keep this watermark - the mark and its look - for next time."""
+    if session is None:
+        await callback.answer(texts.ERROR_GENERIC, show_alert=True)
+        return
+    if await _is_logo(state):
+        await _save_logo_preset(callback, state, session)
+        return
+
     spec = await _spec(state)
-    if spec is None or session is None:
+    if spec is None:
         await callback.answer(texts.ERROR_GENERIC, show_alert=True)
         return
     try:
@@ -365,6 +545,49 @@ async def save_preset(
         await callback.answer(texts.WATERMARK_PRESET_DUPLICATE, show_alert=True)
         return
     await callback.answer(texts.WATERMARK_PRESET_SAVED)
+
+
+async def _save_logo_preset(
+    callback: CallbackQuery, state: FSMContext, session: AsyncSession
+) -> None:
+    """A logo has no text to name itself with, so it gets the next free name.
+
+    The image itself is stored, because the container's disk does not survive a
+    deploy and a preset that loses its logo is not a preset.
+    """
+    logo = await _logo_bytes(state)
+    spec = await _logo_spec(state)
+    if logo is None or spec is None:
+        await callback.answer(texts.WATERMARK_LOGO_GONE, show_alert=True)
+        return
+
+    data = await state.get_data()
+    repository = WatermarkPresetsRepository(session)
+    user_id = _user_id(callback)
+    for index in range(1, MAX_PRESETS_PER_USER + 1):
+        try:
+            await repository.create(
+                user_id,
+                name=texts.watermark_logo_preset_name(index),
+                kind="logo",
+                text="",
+                logo=logo,
+                logo_format=str(data.get("logo_format") or "png"),
+                position=spec.position.value,
+                style=Style.WHITE_SHADOW.value,
+                size=spec.size.value,
+                opacity=spec.opacity,
+            )
+        except DuplicateName:
+            continue          # that number is taken; try the next one
+        except PresetLimitReached:
+            await callback.answer(
+                texts.watermark_preset_limit(MAX_PRESETS_PER_USER), show_alert=True
+            )
+            return
+        await callback.answer(texts.WATERMARK_LOGO_PRESET_SAVED)
+        return
+    await callback.answer(texts.watermark_preset_limit(MAX_PRESETS_PER_USER), show_alert=True)
 
 
 @router.callback_query(WatermarkCallback.filter(F.action == "new"))
@@ -495,8 +718,8 @@ async def leave_presets(
     """Back out of the preset list: to the wizard if a file is waiting."""
     data = await state.get_data()
     if data.get("file"):
-        await state.set_state(WatermarkStates.choosing_source)
-        await _replace(callback, texts.WATERMARK_ASK_TEXT, text_source_choices())
+        await state.set_state(WatermarkStates.choosing_type)
+        await _replace(callback, texts.WATERMARK_TYPE_PROMPT_CHOICE, type_choices())
         return
     await state.clear()
     await _replace(callback, texts.MAIN_MENU, main_menu())
@@ -531,7 +754,7 @@ async def _back_to_wizard_state(state: FSMContext) -> None:
     """After a preset edit, return to whichever flow the user was in."""
     data = await state.get_data()
     await state.set_state(
-        WatermarkStates.choosing_source if data.get("file") else None
+        WatermarkStates.choosing_type if data.get("file") else None
     )
 
 
@@ -555,8 +778,16 @@ async def apply_watermark(
 ) -> None:
     data = await state.get_data()
     incoming = IncomingFile.from_dict(data.get("file"))
-    spec = await _spec(state)
     message = callback.message
+    logo: bytes | None = None
+    if await _is_logo(state):
+        spec = await _logo_spec(state)
+        logo = await _logo_bytes(state)
+        if spec is not None and logo is None:
+            await callback.answer(texts.WATERMARK_LOGO_GONE, show_alert=True)
+            return
+    else:
+        spec = await _spec(state)
     if incoming is None or spec is None or not isinstance(message, Message):
         await state.clear()
         await callback.answer(texts.WATERMARK_CHOICE_EXPIRED, show_alert=True)
@@ -572,7 +803,9 @@ async def apply_watermark(
     await state.set_state(None)
     outcome = await _run_watermark_job(
         message=message, state=state, bot=bot, settings=settings, session=session,
-        incoming=incoming, spec=spec, user_id=user_id, user=user, media_gate=media_gate,
+        incoming=incoming, spec=spec, logo=logo,
+        logo_format=str(data.get("logo_format") or "png"),
+        user_id=user_id, user=user, media_gate=media_gate,
     )
     if outcome is not _Outcome.DONE:
         # The summary is still on screen: Apply can simply be tapped again.
@@ -616,8 +849,10 @@ async def _run_watermark_job(
     settings: Settings,
     session: AsyncSession,
     incoming: IncomingFile,
-    spec: WatermarkSpec,
+    spec: WatermarkSpec | LogoSpec,
     user_id: int,
+    logo: bytes | None = None,
+    logo_format: str = "png",
     user: User | None = None,
     media_gate: MediaJobGate | None = None,
 ) -> _Outcome:
@@ -662,10 +897,23 @@ async def _run_watermark_job(
                     job = await record_job()
                     await commit_early(session)
 
-                    result = await service.apply(
-                        fetched.path, workspace, analysis, spec, job_id=str(job_id),
-                        on_progress=ProgressReporter(status, render=texts.watermark_progress),
-                    )
+                    progress = ProgressReporter(status, render=texts.watermark_progress)
+                    if isinstance(spec, LogoSpec):
+                        # The mark is written into the workspace and removed
+                        # with it, exactly like the file being watermarked.
+                        mark = workspace.path / (
+                            LOGO_FILENAME + IMAGE_EXTENSIONS.get(logo_format, ".png")
+                        )
+                        mark.write_bytes(logo or b"")
+                        result = await service.apply_logo(
+                            fetched.path, workspace, analysis, spec, mark,
+                            job_id=str(job_id), on_progress=progress,
+                        )
+                    else:
+                        result = await service.apply(
+                            fetched.path, workspace, analysis, spec,
+                            job_id=str(job_id), on_progress=progress,
+                        )
                     ensure_sendable(result.size_bytes, settings.output_limit_bytes)
                     await _send_document(bot, message, result, _output_name(incoming, analysis))
 

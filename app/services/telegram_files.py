@@ -342,6 +342,59 @@ def extract_optimizer_source(message: Any) -> IncomingFile | None:
     return None
 
 
+def extract_image_source(message: Any) -> IncomingFile | None:
+    """A still picture only - what Make Sticker and a logo upload accept."""
+    incoming = extract_optimizer_source(message)
+    return incoming if incoming is not None and incoming.kind is FileKind.IMAGE else None
+
+
+def extract_video_source(message: Any) -> IncomingFile | None:
+    """A video only - what Extract Frame accepts."""
+    incoming = extract_optimizer_source(message)
+    return incoming if incoming is not None and incoming.kind is FileKind.VIDEO else None
+
+
+# A GIF reaches the bot in two shapes: as a document (the original file, which
+# is what the converter can really work on) or as an "animation", which is what
+# Telegram calls a GIF it has already turned into a silent MP4.
+GIF_MIME_TYPES = frozenset({"image/gif"})
+_GIF_EXTENSIONS = frozenset({".gif"})
+
+
+def extract_animation_source(message: Any) -> IncomingFile | None:
+    """A video or a GIF for the converter, document form preferred."""
+    document = getattr(message, "document", None)
+    if document is not None:
+        mime_type = (getattr(document, "mime_type", None) or "").lower()
+        extension = safe_extension(
+            getattr(document, "file_name", None), default="", allowed=_GIF_EXTENSIONS
+        )
+        if mime_type in GIF_MIME_TYPES or extension in _GIF_EXTENSIONS:
+            return IncomingFile(
+                file_id=document.file_id,
+                # A GIF is a moving picture; ffprobe has the final say.
+                kind=FileKind.VIDEO,
+                size=getattr(document, "file_size", None),
+                original_filename=getattr(document, "file_name", None),
+                mime_type=getattr(document, "mime_type", None),
+            )
+
+    animation = getattr(message, "animation", None)
+    if animation is not None:
+        return IncomingFile(
+            file_id=animation.file_id,
+            kind=FileKind.VIDEO,
+            size=getattr(animation, "file_size", None),
+            original_filename=getattr(animation, "file_name", None),
+            mime_type=getattr(animation, "mime_type", None),
+            # Telegram re-encoded the GIF into an MP4 before we saw it.
+            compressed=True,
+            duration=_declared_duration(animation),
+        )
+
+    return extract_video_source(message)
+
+
 def extract_media(message: Any) -> IncomingFile | None:
     """Pull a photo or video out of a message, document form preferred."""
     document = getattr(message, "document", None)
