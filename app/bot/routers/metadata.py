@@ -395,9 +395,11 @@ async def apply_changes(
     time_of_day = TimeOfDay(data["time_of_day"])
 
     # The chosen city fixes the timezone, so the capture time lands in that
-    # city's local evening rather than the server's.
+    # city's local evening rather than the server's - and never later than the
+    # city's own clock, because a file cannot be shot after it exists.
     tz = timezone(timedelta(hours=city.utc_offset))
-    taken_at = pick_datetime(time_of_day, on_date=datetime.now(tz).date(), tz=tz)
+    now = datetime.now(tz)
+    taken_at = pick_datetime(time_of_day, on_date=now.date(), tz=tz, not_after=now)
     latitude, longitude = city.jittered()
     request = MetadataChangeRequest(
         preset=preset,

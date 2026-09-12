@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from datetime import date, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -116,3 +116,52 @@ def test_longitude_offset_resolver(longitude, hours):
 
 def test_utc_resolver_is_always_utc():
     assert UtcTimezoneResolver().resolve(12.0, 34.0) is timezone.utc
+
+
+# --- a capture time is never in the future ------------------------------------
+
+
+@pytest.mark.parametrize("time_of_day", list(TimeOfDay))
+@pytest.mark.parametrize("hour", range(0, 24, 3))
+@pytest.mark.parametrize("seed", range(5))
+def test_a_picked_timestamp_is_never_in_the_future(time_of_day, hour, seed):
+    """Whatever the local hour, the chosen interval may not have arrived yet -
+    and a file cannot claim to have been shot after it already existed."""
+    tz = timezone(timedelta(hours=-8))                  # Los Angeles
+    now = datetime(2026, 9, 12, hour, 30, tzinfo=tz)
+
+    picked = pick_datetime(
+        time_of_day, on_date=now.date(), tz=tz, rng=random.Random(seed), not_after=now
+    )
+
+    assert picked <= now
+    # ...and it is still the time of day the user asked for.
+    assert contains(time_of_day, picked.hour, picked.minute)
+    assert picked.tzinfo is tz
+    # Never further back than it has to be: one wrapped day at most.
+    assert picked > now - timedelta(days=2)
+
+
+def test_the_reported_case_lands_the_night_before():
+    """Night (22:00-02:59) chosen at 07:56 in Los Angeles used to produce a
+    timestamp ~15 hours in the future."""
+    tz = timezone(timedelta(hours=-8))
+    now = datetime(2026, 9, 12, 7, 56, tzinfo=tz)
+
+    for seed in range(40):
+        picked = pick_datetime(
+            TimeOfDay.NIGHT, on_date=now.date(), tz=tz, rng=random.Random(seed),
+            not_after=now,
+        )
+        assert picked < now, seed
+        assert picked.date() in (date(2026, 9, 10), date(2026, 9, 11), date(2026, 9, 12))
+        # A "night" hour, not shifted into the morning by the correction.
+        assert contains(TimeOfDay.NIGHT, picked.hour, picked.minute)
+
+
+def test_without_a_limit_the_old_behaviour_is_unchanged():
+    """The guard is opt-in, so a caller that wants a specific day still gets it."""
+    picked = pick_datetime(
+        TimeOfDay.DAY, on_date=TODAY, tz=timezone.utc, rng=random.Random(1)
+    )
+    assert picked.date() == TODAY

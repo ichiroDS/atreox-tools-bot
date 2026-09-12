@@ -92,8 +92,19 @@ def pick_datetime(
     on_date: date_cls,
     tz: tzinfo,
     rng: random.Random | None = None,
+    not_after: datetime | None = None,
 ) -> datetime:
-    """Return a random timezone-aware timestamp inside the interval."""
+    """Return a random timezone-aware timestamp inside the interval.
+
+    ``not_after`` - normally "now" - keeps the result in the past, and the
+    caller should always pass it. The chosen interval may not have arrived yet
+    on the chosen day: ask for "Night" (22:00) while it is 08:00 in Los
+    Angeles and the naive answer is thirteen hours away, and "Night" also
+    wraps past midnight, so it can land a further day out. A capture time in
+    the future is the one timestamp no real recording can carry - the file
+    would claim to have been shot after it already existed - so whole days are
+    stepped back until the moment has actually happened.
+    """
     rng = rng or random.Random()
     start, end = interval_for(time_of_day)
 
@@ -104,4 +115,10 @@ def pick_datetime(
     naive = datetime(
         on_date.year, on_date.month, on_date.day, hour, minute, rng.randrange(60)
     ) + timedelta(days=day_offset)
-    return naive.replace(tzinfo=tz)
+    taken = naive.replace(tzinfo=tz)
+
+    # A whole day at a time, so the local wall-clock time - the one thing the
+    # user actually chose - stays inside the interval.
+    while not_after is not None and taken > not_after:
+        taken -= timedelta(days=1)
+    return taken
