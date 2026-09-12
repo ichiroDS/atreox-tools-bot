@@ -15,9 +15,8 @@ from __future__ import annotations
 import enum
 import errno
 import logging
-import time
 import uuid
-from typing import Any, Callable
+from typing import Any
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError, TelegramEntityTooLarge
@@ -31,7 +30,13 @@ from app.bot.callbacks import MenuCallback, OptimizeCallback
 from app.bot.errors import busy_message, error_code, user_message
 from app.bot.keyboards.common import back_to_menu, main_menu
 from app.bot.keyboards.optimizer import optimize_done, preset_choices
-from app.bot.media_jobs import admit, commit_early, delete_quietly, send_media
+from app.bot.media_jobs import (
+    ProgressReporter,
+    admit,
+    commit_early,
+    delete_quietly,
+    send_media,
+)
 from app.bot.promo import maybe_send_cta
 from app.bot.states import OptimizerStates
 from app.config import Settings
@@ -389,7 +394,7 @@ async def _run_optimize_job(
                     if not isinstance(analysis, VideoAnalysis) or plan_video(analysis, preset).worthwhile:
                         result = await service.optimize(
                             fetched.path, workspace, analysis, preset,
-                            job_id=str(job_id), on_progress=ProgressReporter(status),
+                            job_id=str(job_id), on_progress=ProgressReporter(status, render=texts.optimize_progress),
                         )
 
                     if result is not None and is_worth_sending(before, result.size_bytes):
@@ -450,39 +455,6 @@ async def _send_document(bot: Bot, message: Message, result: OptimizedMedia, fil
         ) from exc
     except TelegramAPIError as exc:
         raise MediaProcessingError(ProcessingErrorCode.SEND_FAILED, type(exc).__name__) from exc
-
-
-class ProgressReporter:
-    """Edits the status message at 25/50/75 %, and never more often than
-    every ``min_interval`` seconds - a quick job shows no progress at all."""
-
-    MILESTONES = (25, 50, 75)
-
-    def __init__(
-        self,
-        status: Message | None,
-        *,
-        min_interval: float = 15.0,
-        clock: Callable[[], float] = time.monotonic,
-    ) -> None:
-        self._status = status
-        self._min_interval = min_interval
-        self._clock = clock
-        self._last_update = clock()
-        self._shown = 0
-
-    async def __call__(self, fraction: float) -> None:
-        reached = [m for m in self.MILESTONES if self._shown < m <= fraction * 100]
-        if not reached or self._status is None:
-            return
-        now = self._clock()
-        if now - self._last_update < self._min_interval:
-            return
-        self._shown, self._last_update = reached[-1], now
-        try:
-            await self._status.edit_text(texts.optimize_progress(self._shown))
-        except Exception:  # noqa: BLE001 - progress is cosmetic
-            pass
 
 
 # --- failures ----------------------------------------------------------------

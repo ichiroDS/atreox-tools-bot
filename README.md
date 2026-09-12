@@ -1,13 +1,14 @@
 # Atreox Tools Bot
 
 A free Telegram utility bot for channel owners, creators and AI influencer
-operators. It ships five tools:
+operators. It ships six tools:
 
 | Tool | What it does |
 | --- | --- |
 | 🎥 **Video → Circle** | Turns any video into a native Telegram video note (circle). |
 | 🎙 **Voice Note** | Turns an audio file, or the sound of a video, into a native Telegram voice message. |
 | 🗜 **Media Optimizer** | Shrinks photos and videos (Small / Balanced / High Quality) and returns them as a File. |
+| 🖼 **Watermark** | Draws a handle or custom line on photos and videos, with saved presets. |
 | 🧹 **Metadata Studio** | Cleans metadata, or rewrites device / location / capture time. |
 | 🎭 **Sticker Finder** | Discovery: six stickers, each from a *different* pack, so the user can open and add the pack they like. |
 
@@ -25,7 +26,8 @@ app/
     texts.py               every user-facing string
     callbacks.py           typed callback-data factories
     errors.py              internal failure -> friendly copy
-    routers/               start, circle, voice, optimizer, metadata, stickers, admin, fallback
+    routers/               start, circle, voice, optimizer, watermark, metadata,
+                           stickers, admin, fallback
     keyboards/             built from the preset/category catalogs, not hardcoded
     states/                FSM state groups
     middlewares/           db session per update, user upsert + activity
@@ -42,6 +44,8 @@ app/
       voice.py             ffmpeg OGG/Opus voice encoder (+ pure probe gate / arg builder)
       optimizer.py         photo/video optimizer: analysis, adaptive preset plans, verify
       image_worker.py      Pillow photo re-encoder, run as its own process
+      watermark.py         watermark layout, drawtext builder, verification
+      watermark_worker.py  Pillow watermark renderer, run as its own process
       metadata.py          ExifTool clean/change/verify (+ pure arg builders)
     stickers/
       catalog.py           configurable categories
@@ -160,6 +164,38 @@ transparency) and sent as a **File** (`disable_content_type_detection`) named
 sent: *"✅ Your original file is already efficiently compressed."* Long encodes
 update the status message at 25/50/75 %, at most every 15 s.
 
+### Watermark
+
+A file, one short line of text, then position / style / size / opacity. The
+file is only *referenced* while the wizard runs - nothing is fetched until
+Apply - so stepping back and forth costs no transfers. The text is cleaned to a
+single line (Unicode "Cf" characters dropped so a watermark cannot hide behind
+zero-width or bidi tricks) and capped at 48 characters.
+
+The size is a share of the **frame height** (S 2.5 %, M 3.5 %, L 5 %), inset by
+2 % of the shorter side, so it looks the same on a 720p clip and a 4K one; the
+text is measured with the real font and shrunk until it fits the width, so a
+long handle on a portrait frame never runs off the picture. Photos and videos
+draw with the *same* TrueType font (`fonts-dejavu-core` in the image,
+`WATERMARK_FONT` to override), which is what lets the layout be planned once
+and handed to FFmpeg as an exact pixel size.
+
+**Photos** (Pillow, in its own process) keep their format, their pixel count
+and their colour profile; the text is composited through a small mask tile, so
+memory stays flat and transparency composites correctly. A photo stored rotated
+is written upright - which is the only case where width and height swap.
+**Videos** (FFmpeg `drawtext`) keep resolution, frame rate, duration and audio
+(copied verbatim when it is already AAC or MP3; silent stays silent), and the
+watermark is on every frame. Text and font are placed in the job workspace and
+FFmpeg runs *inside* it, so no path ever has to be escaped into a filter graph.
+Encoding reuses the optimizer's memory budget, and because a 4K frame is
+encoded *as* 4K, frames above 1080p switch to the light encoder (measured
+964 MB -> 352 MB, well inside the 1 GB container).
+
+Presets live in `watermark_presets` (max 10 per user, unique name per user) and
+store the text *and* the look, so a repeat is two taps. Every read and write is
+scoped to the owner's Telegram id.
+
 ---
 
 ## Local development
@@ -183,9 +219,10 @@ python -m app.main
 
 | Tool | Used by | Install |
 | --- | --- | --- |
-| `ffmpeg`, `ffprobe` (with `libopus`, `libx264`) | Video → Circle, Voice Note, Media Optimizer | `apt install ffmpeg` / `winget install Gyan.FFmpeg` / `brew install ffmpeg` |
+| `ffmpeg`, `ffprobe` (with `libopus`, `libx264`, `libfreetype`) | Video → Circle, Voice Note, Media Optimizer, Watermark | `apt install ffmpeg` / `winget install Gyan.FFmpeg` / `brew install ffmpeg` |
 | `exiftool` | Metadata Studio | `apt install libimage-exiftool-perl` / `winget install OliverBetz.ExifTool` / `brew install exiftool` |
-| Pillow (Python package) | Media Optimizer (photos) | `pip install -r requirements.txt` (wheels bundle libjpeg, zlib, libwebp) |
+| Pillow (Python package) | Media Optimizer, Watermark (photos) | `pip install -r requirements.txt` (wheels bundle libjpeg, zlib, libwebp) |
+| A TrueType font | Watermark | `apt install fonts-dejavu-core` (the image does this); macOS/Windows system fonts are found automatically |
 
 Binaries are configurable via `FFMPEG_BIN`, `FFPROBE_BIN` and `EXIFTOOL_BIN` if
 they are not on `PATH`.
@@ -278,6 +315,7 @@ an ephemeral container filesystem is exactly right.
 | `TEMP_DISK_BUDGET_MB` | `0` | Cap on total workspace reservations; `0` = free space under `TEMP_ROOT` minus 512 MB. |
 | `TEMP_ROOT` | OS temp dir (image: `/tmp/atreox-tools`) | Root of per-job workspaces. Ephemeral by design. |
 | `FFMPEG_BIN` / `FFPROBE_BIN` / `EXIFTOOL_BIN` | tool name | Override binary paths. |
+| `WATERMARK_FONT` | *(empty)* | TrueType font for the watermark. Empty = find a known system font. |
 | `STICKERS_PER_BATCH` | `6` | Stickers per Sticker Finder batch (one per pack). |
 | `VIDEO_NOTE_MAX_DURATION` | `60` | Longest single circle (Telegram's cap is 60 s). Longer videos are offered a split. |
 | `VIDEO_NOTE_SIZE` | `384` | Square side of the circle; must be even. |
@@ -438,6 +476,9 @@ re-running the sync. Categories live in `app/services/stickers/catalog.py`.
 - **Feature selected** — a `feature_events` row per tool opened.
 - **Successful / failed jobs** — `jobs` rows with status, sizes, and a stable
   internal `error_code` on failure.
+- **Watermark presets** — the only user content stored on purpose:
+  `watermark_presets` keeps the text and look a user asked to save, and
+  nothing else. Uploaded media is never stored.
 
 > Deviation from the original spec, called out deliberately: `feature_events` is
 > a fifth table, added because "track feature selected" has no home in the four
@@ -473,6 +514,7 @@ tools, so everything runs there.
 | Video → Circle (probe, rotation-aware square crop, scale, H.264 encode, `sendVideoNote`) | Working; verified end-to-end against real ffmpeg |
 | Voice Note (probe gate, OGG/Opus encode + verify, `sendVoice`) | Working; verified end-to-end against real ffmpeg and aiogram's request builder |
 | Media Optimizer (analysis, adaptive presets, H.264/AAC + JPEG/PNG/WEBP, verify, `sendDocument`) | Working; verified end-to-end against real ffmpeg and Pillow |
+| Watermark (text wizard, presets, Pillow + `drawtext`, verify, `sendDocument`) | Working; positions, sizes and opacity measured from the rendered pixels |
 | Metadata: clean (ExifTool strip, keeps orientation/ICC, verifies output) | Implemented; **not yet run against real ExifTool** |
 | Metadata: change wizard (file → device → location → time of day → confirm) | FSM working; write path implemented, **not yet run against real ExifTool** |
 | Sticker Finder (categories, distinct-pack batches, More/Categories/Menu) | Logic working; **needs real `file_id`s seeded** |

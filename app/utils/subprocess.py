@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Sequence
 
@@ -53,11 +54,16 @@ async def run_command(
     *,
     timeout: float,
     job_id: str | None = None,
+    cwd: str | os.PathLike[str] | None = None,
 ) -> CommandResult:
     """Run ``args`` without a shell, enforcing ``timeout`` seconds.
 
     Raises ``CommandTimeout``/``CommandFailed``/``CommandNotFound``. Only the
     program name and exit status are logged - never the media payload.
+
+    ``cwd`` runs the tool inside a directory so a caller can hand it plain
+    relative filenames - which is how the watermark filter avoids quoting a
+    Windows path inside an FFmpeg filter graph.
     """
     if not args:
         raise ValueError("run_command requires a non-empty argument array")
@@ -72,6 +78,7 @@ async def run_command(
             *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
         )
     except FileNotFoundError as exc:  # pragma: no cover - environment dependent
         raise CommandNotFound(program) from exc
@@ -106,6 +113,7 @@ async def run_command_streaming(
     timeout: float,
     on_line: Callable[[str], Awaitable[None]],
     job_id: str | None = None,
+    cwd: str | os.PathLike[str] | None = None,
 ) -> CommandResult:
     """Like :func:`run_command`, but hands each stdout line to ``on_line`` as it
     arrives - for tools that report progress (``ffmpeg -progress pipe:1``).
@@ -127,6 +135,7 @@ async def run_command_streaming(
             *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
         )
     except FileNotFoundError as exc:  # pragma: no cover - environment dependent
         raise CommandNotFound(program) from exc

@@ -9,6 +9,7 @@ ATREOX_URL = "https://atreoxai.com"
 BTN_CIRCLE = "\U0001f3a5 Video \u2192 Circle"
 BTN_VOICE = "\U0001f399 Voice Note"
 BTN_OPTIMIZE = "\U0001f5dc Media Optimizer"
+BTN_WATERMARK = "\U0001f5bc Watermark"
 BTN_METADATA = "\U0001f9f9 Metadata Studio"
 BTN_STICKERS = "\U0001f3ad Find Stickers"
 BTN_GROW = "\U0001f680 Grow My Channel"
@@ -41,6 +42,9 @@ HELP = (
     "\U0001f5dc <b>Media Optimizer</b>\n"
     "Reduces photo and video file sizes while keeping them suitable for "
     "Telegram.\n\n"
+    "\U0001f5bc <b>Watermark</b>\n"
+    "Adds your @username or custom branding text to photos and videos. Save "
+    "presets for repeated use.\n\n"
     "\U0001f9f9 <b>Metadata Studio</b>\n"
     "Clean metadata or apply a custom content profile to media.\n\n"
     "\U0001f3ad <b>Find Stickers</b>\n"
@@ -240,6 +244,142 @@ OPTIMIZE_OUT_OF_MEMORY = (
 )
 OPTIMIZE_SEND_FAILED = (
     "⚠️ Telegram didn't accept the file. Please try again in a moment."
+)
+
+# --- Watermark --------------------------------------------------------------
+WATERMARK_PROMPT = (
+    "🖼 Send me a photo or video.\n\n"
+    "I'll add your @username or custom text as a clean watermark.\n\n"
+    "For best quality, send media as a File."
+)
+WATERMARK_ASK_TEXT = "What should the watermark say?"
+WATERMARK_TYPE_PROMPT = (
+    "✏️ Send the watermark text.\n\n"
+    "For example: <code>@username</code>, <code>t.me/username</code> or your name.\n\n"
+    "One line, up to 48 characters."
+)
+WATERMARK_TEXT_REJECTED = (
+    "⚠️ That won't work as a watermark. Send one short line — up to 48 "
+    "characters, with at least one letter or number."
+)
+WATERMARK_POSITION_PROMPT = "Choose position:"
+WATERMARK_STYLE_PROMPT = "Choose style:"
+WATERMARK_SIZE_PROMPT = "Watermark size:"
+WATERMARK_OPACITY_PROMPT = "Opacity:"
+WATERMARK_PROCESSING = "⏳ Adding your watermark..."
+WATERMARK_DONE = "✅ Watermark added."
+WATERMARK_CHOICE_EXPIRED = "This step has expired. Please send the file again."
+
+BTN_WATERMARK_ENTER_TEXT = "✏️ Enter Text"
+BTN_WATERMARK_PRESETS = "💾 My Presets"
+BTN_WATERMARK_APPLY = "✅ Apply"
+BTN_WATERMARK_SAVE_PRESET = "💾 Save as Preset"
+BTN_WATERMARK_CHANGE = "✏️ Change"
+BTN_WATERMARK_AGAIN = "🖼 Watermark Another"
+
+# Labels for everything the user picks, keyed by the stored value so the
+# service's enums and this copy can never drift apart silently.
+WATERMARK_POSITION_LABELS = {
+    "top_left": "↖️ Top Left",
+    "top_right": "↗️ Top Right",
+    "bottom_left": "↙️ Bottom Left",
+    "bottom_right": "↘️ Bottom Right",
+    "bottom_center": "⬇️ Bottom Center",
+}
+WATERMARK_STYLE_LABELS = {
+    "white": "⚪ White",
+    "black": "⚫ Black",
+    "white_shadow": "✨ White + Shadow",
+}
+WATERMARK_SIZE_LABELS = {"s": "S", "m": "M", "l": "L"}
+
+
+def _plain(label: str) -> str:
+    """The label without its emoji, for the summary lines."""
+    return label.split(" ", 1)[1] if " " in label else label
+
+
+def watermark_summary(
+    *, text: str, position: str, style: str, size: str, opacity: int
+) -> str:
+    return (
+        "🖼 <b>Watermark</b>\n\n"
+        f"Text: {text}\n"
+        f"Position: {_plain(WATERMARK_POSITION_LABELS[position])}\n"
+        f"Style: {_plain(WATERMARK_STYLE_LABELS[style])}\n"
+        f"Size: {WATERMARK_SIZE_LABELS[size]}\n"
+        f"Opacity: {opacity}%\n\n"
+        "Apply?"
+    )
+
+
+def watermark_progress(percent: int) -> str:
+    return f"{WATERMARK_PROCESSING} {percent}%"
+
+
+# --- Watermark presets ------------------------------------------------------
+WATERMARK_PRESETS_TITLE = "💾 <b>My Presets</b>\n\nPick one to use or manage."
+WATERMARK_PRESETS_EMPTY = "No saved watermarks yet."
+BTN_WATERMARK_SAVE_NEW = "➕ Save New"
+BTN_WATERMARK_USE = "✅ Use This"
+BTN_WATERMARK_RENAME = "✏️ Rename"
+BTN_WATERMARK_EDIT_TEXT = "📝 Edit Text"
+BTN_WATERMARK_DELETE = "🗑 Delete"
+BTN_WATERMARK_DELETE_CONFIRM = "🗑 Yes, delete"
+
+WATERMARK_NEW_PRESET_PROMPT = (
+    "➕ Send the watermark text to save, for example <code>@username</code>."
+)
+WATERMARK_RENAME_PROMPT = "✏️ Send a new name for this preset."
+WATERMARK_EDIT_TEXT_PROMPT = "📝 Send the new watermark text."
+WATERMARK_PRESET_SAVED = "💾 Saved."
+WATERMARK_PRESET_UPDATED = "💾 Updated."
+WATERMARK_PRESET_DELETED = "🗑 Deleted."
+WATERMARK_PRESET_GONE = "That preset no longer exists."
+WATERMARK_PRESET_DUPLICATE = "You already have a preset with that name."
+
+
+def watermark_preset_limit(maximum: int) -> str:
+    return (
+        f"You already have {maximum} saved watermarks. "
+        "Delete one before saving another."
+    )
+
+
+def watermark_preset_detail(
+    *, name: str, text: str, position: str, style: str, size: str, opacity: int
+) -> str:
+    return (
+        f"💾 <b>{name}</b>\n\n"
+        f"Text: {text}\n"
+        f"Position: {_plain(WATERMARK_POSITION_LABELS[position])}\n"
+        f"Style: {_plain(WATERMARK_STYLE_LABELS[style])}\n"
+        f"Size: {WATERMARK_SIZE_LABELS[size]}\n"
+        f"Opacity: {opacity}%"
+    )
+
+
+def watermark_delete_confirmation(name: str) -> str:
+    return f"🗑 Delete <b>{name}</b>?"
+
+
+WATERMARK_UNSUPPORTED = (
+    "⚠️ I can't watermark that. Send a photo (JPEG, PNG, WEBP) or a video "
+    "(MP4, MOV, WEBM, MKV…) — as media or as a File."
+)
+WATERMARK_CORRUPT = (
+    "⚠️ I couldn't read this file. It may be damaged. Please try another one."
+)
+WATERMARK_TIMEOUT = (
+    "⏱ This file took too long to watermark. Please try a shorter video."
+)
+WATERMARK_VERIFY_FAILED = (
+    "⚠️ The watermarked file didn't pass my checks, so I didn't send it. "
+    "Please try again."
+)
+WATERMARK_FONT_MISSING = (
+    "⚠️ The watermark font is unavailable on the server right now. "
+    "Please try again later."
 )
 
 _KB = 1024
@@ -469,6 +609,7 @@ def stats_report(stats) -> str:
         f"🎥 Circles: {stats.circles}",
         f"🎙 Voice notes: {stats.voice_notes}",
         f"🗜 Optimizations: {stats.optimizations}",
+        f"🖼 Watermarks: {stats.watermarks}",
         f"🧹 Metadata cleans: {stats.metadata_cleans}",
         f"✏️ Metadata changes: {stats.metadata_changes}",
         f"🎭 Sticker searches: {stats.sticker_searches}",

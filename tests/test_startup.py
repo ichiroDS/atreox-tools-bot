@@ -82,12 +82,17 @@ async def test_prepare_database_brings_an_empty_database_to_head(tmp_path, monke
             "select name from sqlite_master where type='table'"
         )
     }
-    assert {"users", "jobs", "sticker_sets", "sticker_samples", "feature_events"} <= tables
-    # Schema is at the latest revision, and the CTA columns from 0002 exist.
+    assert {"users", "jobs", "sticker_sets", "sticker_samples", "feature_events",
+            "watermark_presets"} <= tables
+    # Schema is at the latest revision, with the CTA columns from 0002 and the
+    # watermark presets from 0003.
     revision = connection.execute("select version_num from alembic_version").fetchone()
-    assert revision == ("0002",)
+    assert revision == ("0003",)
     columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
     assert {"cta_shown_count", "cta_last_shown_at"} <= columns
+    preset_columns = {row[1] for row in connection.execute("PRAGMA table_info(watermark_presets)")}
+    assert {"telegram_user_id", "name", "text", "position", "style", "size", "opacity",
+            "created_at", "updated_at"} <= preset_columns
     connection.close()
 
 

@@ -137,6 +137,10 @@ class Settings(BaseSettings):
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"
     exiftool_bin: str = "exiftool"
+    # TrueType font the watermark is drawn with. Empty means "find one": the
+    # Docker image installs fonts-dejavu-core, and the known system fonts are
+    # tried in turn (see app/services/media/watermark.py).
+    watermark_font: str | None = None
 
     # Comma separated Telegram user ids allowed to use dev/seed helpers.
     admin_user_ids: str = ""

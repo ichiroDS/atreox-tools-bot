@@ -14,6 +14,7 @@ def main_menu() -> InlineKeyboardMarkup:
     builder.button(text=texts.BTN_CIRCLE, callback_data=MenuCallback(action="circle"))
     builder.button(text=texts.BTN_VOICE, callback_data=MenuCallback(action="voice"))
     builder.button(text=texts.BTN_OPTIMIZE, callback_data=MenuCallback(action="optimize"))
+    builder.button(text=texts.BTN_WATERMARK, callback_data=MenuCallback(action="watermark"))
     builder.button(text=texts.BTN_METADATA, callback_data=MenuCallback(action="metadata"))
     builder.button(text=texts.BTN_STICKERS, callback_data=MenuCallback(action="stickers"))
     # A direct link: one tap to the site, as intended for the menu entry.

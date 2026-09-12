@@ -44,6 +44,7 @@ from app.bot.texts import (
     BTN_OPTIMIZE,
     BTN_STICKERS,
     BTN_VOICE,
+    BTN_WATERMARK,
 )
 from app.config import Settings
 from app.data.device_presets import (
@@ -69,7 +70,8 @@ def test_dispatcher_wires_every_flow_with_the_fallback_last(clean_env):
     root = dispatcher.sub_routers[0]
     names = [r.name for r in root.sub_routers]
     assert names == [
-        "start", "circle", "voice", "optimizer", "metadata", "stickers", "admin", "fallback",
+        "start", "circle", "voice", "optimizer", "watermark", "metadata", "stickers",
+        "admin", "fallback",
     ]
     installed = {type(m) for m in dispatcher.update.outer_middleware}
     assert {DbSessionMiddleware, UserMiddleware} <= installed
@@ -87,6 +89,7 @@ def test_main_menu_lists_the_tools_growth_and_help():
         BTN_CIRCLE,
         BTN_VOICE,
         BTN_OPTIMIZE,
+        BTN_WATERMARK,
         BTN_METADATA,
         BTN_STICKERS,
         texts.BTN_GROW,

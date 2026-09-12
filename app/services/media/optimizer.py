@@ -56,10 +56,10 @@ VIDEO_FORMATS = frozenset(
 )
 IMAGE_FORMATS = frozenset({"image2", "jpeg_pipe", "png_pipe", "webp_pipe"})
 IMAGE_CODECS = {"mjpeg": "jpeg", "png": "png", "webp": "webp"}
-_IMAGE_EXTENSIONS = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}
+IMAGE_EXTENSIONS = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}
 
 # Pixel formats that carry an alpha channel (pal8 may, through tRNS).
-_ALPHA_PIX_FMTS = frozenset(
+ALPHA_PIX_FMTS = frozenset(
     {"rgba", "bgra", "argb", "abgr", "ya8", "ya16be", "ya16le", "rgba64be", "rgba64le",
      "yuva420p", "yuva444p", "pal8"}
 )
@@ -184,7 +184,7 @@ class ImageAnalysis:
 
     @property
     def has_alpha(self) -> bool:
-        return self.pix_fmt in _ALPHA_PIX_FMTS
+        return self.pix_fmt in ALPHA_PIX_FMTS
 
     @property
     def deep_png(self) -> bool:
@@ -526,12 +526,18 @@ def build_image_worker_args(python_bin: str, source: Path, destination: Path,
 # --- output naming and verification (pure) -----------------------------------
 
 
-def optimized_filename(original_filename: str | None, kind: MediaKind, image_format: str | None = None) -> str:
-    """``atreox_optimized_<original name>``, sanitised, with the real extension."""
+def optimized_filename(
+    original_filename: str | None,
+    kind: MediaKind,
+    image_format: str | None = None,
+    *,
+    prefix: str = OUTPUT_PREFIX,
+) -> str:
+    """``<prefix><original name>``, sanitised, with the real extension."""
     if kind is MediaKind.VIDEO:
         extension, fallback = ".mp4", "video"
     else:
-        extension, fallback = _IMAGE_EXTENSIONS.get(image_format or "jpeg", ".jpg"), "photo"
+        extension, fallback = IMAGE_EXTENSIONS.get(image_format or "jpeg", ".jpg"), "photo"
         original_ext = Path(original_filename or "").suffix.lower()
         if image_format == "jpeg" and original_ext in (".jpg", ".jpeg"):
             extension = original_ext
@@ -541,7 +547,7 @@ def optimized_filename(original_filename: str | None, kind: MediaKind, image_for
     if not any(char.isalnum() for char in stem):
         # e.g. a name written entirely in a non-Latin script.
         stem = fallback
-    return f"{OUTPUT_PREFIX}{stem}{extension}"
+    return f"{prefix}{stem}{extension}"
 
 
 def verify_video(output: dict[str, Any], analysis: VideoAnalysis, plan: VideoPlan) -> None:
@@ -585,7 +591,7 @@ def verify_image(output: dict[str, Any], analysis: ImageAnalysis) -> None:
         fail(f"format changed to {stream.get('codec_name')!r}")
     if (int(stream.get("width") or 0), int(stream.get("height") or 0)) != (analysis.width, analysis.height):
         fail("pixel dimensions changed")
-    if analysis.has_alpha and analysis.pix_fmt != "pal8" and str(stream.get("pix_fmt")) not in _ALPHA_PIX_FMTS:
+    if analysis.has_alpha and analysis.pix_fmt != "pal8" and str(stream.get("pix_fmt")) not in ALPHA_PIX_FMTS:
         fail("transparency was lost")
 
 
@@ -682,7 +688,7 @@ class MediaOptimizerService:
                               analysis.duration)
 
     async def _optimize_image(self, source, workspace, analysis, preset, job_id):
-        destination = workspace.new_file(_IMAGE_EXTENSIONS[analysis.format], prefix="opt_")
+        destination = workspace.new_file(IMAGE_EXTENSIONS[analysis.format], prefix="opt_")
         if analysis.deep_png:
             args = build_deep_png_args(self._ffmpeg_bin, source, destination)
         else:

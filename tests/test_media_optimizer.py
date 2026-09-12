@@ -785,7 +785,8 @@ class Clock:
 async def test_progress_is_shown_at_milestones_without_spamming():
     status = FakeMessage()
     clock = Clock()
-    report = optimizer_router.ProgressReporter(status, min_interval=15, clock=clock)
+    report = optimizer_router.ProgressReporter(status, render=texts.optimize_progress,
+                                               min_interval=15, clock=clock)
 
     for fraction, at in [(0.1, 5), (0.3, 10), (0.31, 20), (0.4, 22), (0.55, 30), (0.6, 40),
                          (0.8, 50), (0.9, 60), (1.0, 70)]:
@@ -800,7 +801,7 @@ async def test_progress_is_shown_at_milestones_without_spamming():
 async def test_a_quick_job_shows_no_progress_at_all():
     status = FakeMessage()
     clock = Clock()
-    report = optimizer_router.ProgressReporter(status, clock=clock)
+    report = optimizer_router.ProgressReporter(status, render=texts.optimize_progress, clock=clock)
     for fraction in (0.25, 0.5, 0.75, 1.0):
         clock.now += 1
         await report(fraction)

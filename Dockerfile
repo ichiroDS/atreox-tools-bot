@@ -13,8 +13,10 @@ ENV PYTHONUNBUFFERED=1 \
 #   ffmpeg                 -> ffmpeg + ffprobe, for Video -> Circle, Voice Note
 #                             (libopus) and Media Optimizer (libx264)
 #   libimage-exiftool-perl -> exiftool, for Metadata Studio
+#   fonts-dejavu-core      -> DejaVuSans, the font the Watermark tool draws with
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg libimage-exiftool-perl \
+    && apt-get install -y --no-install-recommends \
+        ffmpeg libimage-exiftool-perl fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -41,6 +43,7 @@ RUN ffmpeg -version > /dev/null \
     && ffmpeg -hide_banner -encoders | grep -q libopus \
     && ffmpeg -hide_banner -encoders | grep -q libx264 \
     && python -c "from PIL import features; assert all(map(features.check, ('jpg', 'webp', 'zlib')))" \
+    && python -c "from app.services.media.watermark import resolve_font; print(resolve_font())" \
     && exiftool -ver > /dev/null
 
 # The entrypoint waits for the database and applies migrations, then execs the

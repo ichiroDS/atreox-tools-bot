@@ -28,6 +28,13 @@ class OptimizeCallback(CallbackData, prefix="opt"):
     value: str = ""  # small | balanced | high
 
 
+class WatermarkCallback(CallbackData, prefix="wm"):
+    # enter | presets | pos | style | size | opacity | apply | save | change
+    # detail | use | rename | edit | delete | delete_yes | new | back | cancel
+    action: str
+    value: str = ""  # an enum value, or a preset id
+
+
 class MetadataCallback(CallbackData, prefix="meta"):
     action: str  # clean | change | device | tod | apply | restart | cancel
     value: str = ""

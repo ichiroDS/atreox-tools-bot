@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+import time
+from typing import Any, Callable
 
 from aiogram.exceptions import TelegramRetryAfter
 
@@ -81,3 +82,41 @@ async def delete_quietly(message: Any) -> None:
         await message.delete()
     except Exception:  # noqa: BLE001 - deletion is best effort
         pass
+
+
+class ProgressReporter:
+    """Edits a status message at 25/50/75 %, and never more often than every
+    ``min_interval`` seconds - a quick job shows no progress at all.
+
+    ``render`` turns a percentage into the tool's own wording.
+    """
+
+    MILESTONES = (25, 50, 75)
+
+    def __init__(
+        self,
+        status: Any,
+        *,
+        render: Callable[[int], str],
+        min_interval: float = 15.0,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._status = status
+        self._render = render
+        self._min_interval = min_interval
+        self._clock = clock
+        self._last_update = clock()
+        self._shown = 0
+
+    async def __call__(self, fraction: float) -> None:
+        reached = [m for m in self.MILESTONES if self._shown < m <= fraction * 100]
+        if not reached or self._status is None:
+            return
+        now = self._clock()
+        if now - self._last_update < self._min_interval:
+            return
+        self._shown, self._last_update = reached[-1], now
+        try:
+            await self._status.edit_text(self._render(self._shown))
+        except Exception:  # noqa: BLE001 - progress is cosmetic
+            pass
