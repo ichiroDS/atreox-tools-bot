@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-import subprocess
 import sys
 import tempfile
 import traceback
@@ -35,34 +34,30 @@ from app.services.media.animation import (  # noqa: E402
     plan_clip,
 )
 from app.services.media.frame import FrameService, Position  # noqa: E402
-from app.services.media.optimizer import (  # noqa: E402
-    MediaOptimizerService,
-    Preset,
-    parse_analysis,
-)
+from app.services.media.optimizer import MediaOptimizerService, Preset  # noqa: E402
 from app.services.media.sticker import StickerService, StickerStyle  # noqa: E402
 from app.services.media.watermark import (  # noqa: E402
     LogoSpec,
     WatermarkService,
     WatermarkSpec,
 )
+from app.utils.subprocess import run_command  # noqa: E402
 from app.utils.temp_files import JobWorkspace  # noqa: E402
 
 
-def _ffmpeg(binary: str, *args: str) -> None:
-    subprocess.run([binary, "-y", "-hide_banner", "-loglevel", "error", *args],
-                   check=True, timeout=300)
-
-
-def _sources(root: Path, settings: Settings) -> tuple[Path, Path, Path]:
+async def _sources(root: Path, settings: Settings) -> tuple[Path, Path, Path]:
     """A short video with sound, a photo, and a transparent logo."""
     from PIL import Image, ImageDraw
 
     video = root / "clip.mp4"
-    _ffmpeg(settings.ffmpeg_bin,
-            "-f", "lavfi", "-i", "testsrc=size=640x360:rate=25",
-            "-f", "lavfi", "-i", "sine=frequency=440",
-            "-t", "3", "-pix_fmt", "yuv420p", "-c:a", "aac", str(video))
+    # Through the same guarded helper every tool uses, so this too is bounded.
+    await run_command(
+        [settings.ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+         "-f", "lavfi", "-i", "testsrc=size=640x360:rate=25",
+         "-f", "lavfi", "-i", "sine=frequency=440",
+         "-t", "3", "-pix_fmt", "yuv420p", "-c:a", "aac", str(video)],
+        timeout=300,
+    )
 
     photo = root / "photo.png"
     Image.new("RGB", (1200, 800), (18, 18, 24)).save(photo)
@@ -81,7 +76,7 @@ def _workspace(root: Path) -> JobWorkspace:
 
 
 async def _run(root: Path, settings: Settings) -> list[tuple[str, bool, str]]:
-    video, photo, logo = _sources(root, settings)
+    video, photo, logo = await _sources(root, settings)
     timeouts = dict(timeout=settings.process_timeout_seconds, probe_timeout=60)
     animation = AnimationService(ffmpeg_bin=settings.ffmpeg_bin,
                                  ffprobe_bin=settings.ffprobe_bin, **timeouts)
