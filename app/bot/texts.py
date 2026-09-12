@@ -652,6 +652,10 @@ ERROR_OUTPUT_TOO_LARGE = (
     "⚠️ The processed file is too large to send back through Telegram, so it "
     "was not sent. Please try a smaller file."
 )
+ERROR_DOWNLOAD = (
+    "⚠️ Telegram didn't hand the file over in time. "
+    "Please send it again."
+)
 ERROR_GENERIC = "Something went wrong. Let's start over."
 SERVER_BUSY = (
     "⏳ The server is busy with other large files right now. "

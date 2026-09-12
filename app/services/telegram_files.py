@@ -28,6 +28,8 @@ from urllib.parse import quote
 
 import aiofiles
 
+from aiogram.exceptions import TelegramNetworkError
+
 from app.services.media.base import MediaProcessingError, ProcessingErrorCode
 from app.utils.temp_files import (
     AUDIO_EXTENSIONS,
@@ -567,7 +569,7 @@ class TelegramFileService:
         borrowed without copying.
         """
         self.check_size(incoming)
-        telegram_file = await self._get_file(incoming.file_id)
+        telegram_file = await self._get_file(incoming.file_id, size_hint=incoming.size)
 
         declared = getattr(telegram_file, "file_size", None)
         if declared and declared > self._max_file_size_bytes:
@@ -622,14 +624,28 @@ class TelegramFileService:
                 "could not release the Bot API server's copy", extra={"job_id": job_id or "-"}
             )
 
-    async def _get_file(self, file_id: str) -> Any:
+    async def _get_file(self, file_id: str, *, size_hint: int | None = None) -> Any:
+        """Ask where the bytes are, with a timeout sized to the file.
+
+        A local Bot API server has to move a multi-gigabyte upload into its
+        working directory before it can answer, which takes far longer than
+        aiogram's one-minute default: a 1.5 GB video failed here with a bare
+        network timeout before any download had started.
+        """
         try:
-            return await self._bot.get_file(file_id)
+            return await self._bot.get_file(
+                file_id, request_timeout=transfer_timeout(size_hint)
+            )
         except Exception as exc:
             # The cloud API refuses getFile above 20 MB even when the size was
             # not declared up front.
             if "too big" in str(exc).lower():
                 raise FileTooLargeError(0, self._max_file_size_bytes) from exc
+            if isinstance(exc, TelegramNetworkError):
+                # A stable code beats "unknown_error" on the job row.
+                raise MediaProcessingError(
+                    ProcessingErrorCode.DOWNLOAD_FAILED, "getFile timed out"
+                ) from exc
             raise
 
     async def _download_cloud(self, file_path: str, destination: Path, declared: int | None) -> int:

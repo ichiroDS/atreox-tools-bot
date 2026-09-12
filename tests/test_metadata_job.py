@@ -58,7 +58,7 @@ class FakeBot:
     def __init__(self, source: Path):
         self._source = source
 
-    async def get_file(self, file_id):
+    async def get_file(self, file_id, request_timeout=None):
         return SimpleNamespace(
             file_path=str(self._source), file_size=self._source.stat().st_size
         )

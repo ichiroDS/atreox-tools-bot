@@ -170,7 +170,7 @@ class FakeBot:
         self.file_size = file_size
         self.downloaded = False
 
-    async def get_file(self, file_id):
+    async def get_file(self, file_id, request_timeout=None):
         return SimpleNamespace(file_path="videos/file_1.mp4", file_size=self.file_size)
 
     async def download_file(self, file_path, destination, **kwargs):

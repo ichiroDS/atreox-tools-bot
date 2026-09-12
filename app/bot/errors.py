@@ -15,6 +15,7 @@ _MESSAGES: dict[ProcessingErrorCode, str] = {
     ProcessingErrorCode.UNSUPPORTED: texts.ERROR_UNSUPPORTED,
     ProcessingErrorCode.TOO_LARGE: texts.ERROR_TOO_LARGE,
     ProcessingErrorCode.OUTPUT_TOO_LARGE: texts.ERROR_OUTPUT_TOO_LARGE,
+    ProcessingErrorCode.DOWNLOAD_FAILED: texts.ERROR_DOWNLOAD,
 }
 
 

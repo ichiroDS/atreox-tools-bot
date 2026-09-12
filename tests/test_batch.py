@@ -112,7 +112,7 @@ class BatchBot(FakeBot):
         self.sources = sources or {}
         self.edits: list[str] = []
 
-    async def get_file(self, file_id):
+    async def get_file(self, file_id, request_timeout=None):
         path = self.sources[file_id]
         return SimpleNamespace(file_path=str(path), file_size=path.stat().st_size)
 

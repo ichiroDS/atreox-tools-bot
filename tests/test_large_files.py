@@ -126,8 +126,10 @@ class FakeBot:
         self.cloud_source = cloud_source
         self.downloads: list[dict] = []
         self.timeouts: list[int] = []
+        self.get_file_timeouts: list[int | None] = []
 
-    async def get_file(self, file_id):
+    async def get_file(self, file_id, request_timeout=None):
+        self.get_file_timeouts.append(request_timeout)
         return SimpleNamespace(file_path=self.file_path, file_size=self.size)
 
     async def download_file(self, file_path, destination=None, **kwargs):
@@ -484,7 +486,7 @@ async def test_a_file_above_the_old_20mb_cap_is_accepted_in_local_mode(tmp_path,
 
 async def test_the_cloud_getfile_too_big_error_maps_to_the_size_message(tmp_path):
     class RefusingBot(FakeBot):
-        async def get_file(self, file_id):
+        async def get_file(self, file_id, request_timeout=None):
             raise RuntimeError("Telegram server says - Bad Request: file is too big")
 
     service = TelegramFileService(RefusingBot("x"), max_file_size_bytes=20 * MB)
@@ -1106,3 +1108,40 @@ def test_incoming_file_round_trips_through_fsm_storage():
     original = video(size=5 * MB, duration=61.0, name="clip.mov")
     assert IncomingFile.from_dict(json.loads(json.dumps(original.to_dict()))) == original
     assert IncomingFile.from_dict({"kind": "video"}) is None
+
+
+async def test_get_file_waits_longer_for_a_bigger_file(tmp_path):
+    """A local Bot API server has to move a multi-gigabyte upload into place
+    before it can answer getFile; aiogram's one-minute default timed out and a
+    1.5 GB video failed in production before any download started."""
+    source = tmp_path / "cloud.mp4"
+    source.write_bytes(b"v" * 2048)
+    bot = FakeBot("videos/file_1.mp4", size=2048, cloud_source=source)
+    service = TelegramFileService(bot, max_file_size_bytes=2000 * MB)
+
+    await service.fetch(video(size=1500 * MB), workspace_in(tmp_path))
+
+    (timeout,) = bot.get_file_timeouts
+    assert timeout is not None and timeout > 60          # not aiogram's default
+    assert timeout == transfer_timeout(1500 * MB)
+
+
+async def test_a_getfile_timeout_is_reported_as_a_download_failure(tmp_path):
+    """It used to land on the job row as "unknown_error"."""
+    from aiogram.exceptions import TelegramNetworkError
+    from aiogram.methods import GetFile
+
+    class TimingOutBot(FakeBot):
+        async def get_file(self, file_id, request_timeout=None):
+            raise TelegramNetworkError(method=GetFile(file_id=file_id),
+                                       message="Request timeout error")
+
+    service = TelegramFileService(TimingOutBot("x"), max_file_size_bytes=2000 * MB)
+    with pytest.raises(MediaProcessingError) as excinfo:
+        await service.fetch(video(size=1500 * MB), workspace_in(tmp_path))
+
+    assert excinfo.value.code is ProcessingErrorCode.DOWNLOAD_FAILED
+    from app.bot.errors import error_code, user_message
+
+    assert error_code(excinfo.value) == "download_failed"
+    assert user_message(excinfo.value) == texts.ERROR_DOWNLOAD
