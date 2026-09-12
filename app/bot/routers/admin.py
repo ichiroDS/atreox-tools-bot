@@ -20,6 +20,7 @@ from app.bot import texts
 from app.bot.keyboards.common import back_to_menu
 from app.config import Settings
 from app.db.repositories import StatsRepository
+from app.services.jobgate import MediaJobGate
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,8 @@ async def show_stats(
     message: Message,
     state: FSMContext,
     session: AsyncSession,
+    settings: Settings | None = None,
+    media_gate: MediaJobGate | None = None,
 ) -> None:
     await state.clear()
     stats = await StatsRepository(session).collect()
@@ -47,7 +50,17 @@ async def show_stats(
         "stats requested by telegram_user_id=%s",
         message.from_user.id if message.from_user else 0,
     )
-    await message.answer(texts.stats_report(stats), reply_markup=back_to_menu())
+    report = texts.stats_report(stats)
+    if settings is not None:
+        # Reaching this line means the query above already answered.
+        report += texts.stats_system(
+            version=settings.version,
+            database="connected",
+            local_api=settings.uses_local_bot_api,
+            active_jobs=media_gate.heavy_running if media_gate else 0,
+            job_slots=settings.max_concurrent_media_jobs,
+        )
+    await message.answer(report, reply_markup=back_to_menu())
 
 
 @router.message(F.sticker, IsAdmin())

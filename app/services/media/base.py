@@ -7,6 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# The bot runs in a small container (Railway: 1 GB, 2 vCPU). FFmpeg sizes its
+# thread pools from the CPUs it can *see* - the host's, not the container's
+# quota - and every decoder and encoder thread holds frames of its own, so
+# every invocation states its own budget. Measured peak RSS on a 2160x3840
+# 60 fps source: circle 524 -> 124 MB, optimizer 1662 -> 345 MB.
+MAX_ENCODE_THREADS = 2
+
+
 class ProcessingErrorCode(str, enum.Enum):
     """Stable codes stored on ``jobs.error_code`` - never shown to users."""
 

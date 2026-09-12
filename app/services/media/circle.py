@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Protocol
 
 from app.services.media.base import (
+    MAX_ENCODE_THREADS,
     MediaInfo,
     MediaProcessingError,
     ProcessedFile,
@@ -100,6 +101,7 @@ def build_circle_ffmpeg_args(
     duration_limit: float,
     with_audio: bool = True,
     start: float = 0.0,
+    threads: int = MAX_ENCODE_THREADS,
 ) -> list[str]:
     """Crop to a centred square, scale to ``size`` and encode a Telegram-safe MP4.
 
@@ -109,6 +111,10 @@ def build_circle_ffmpeg_args(
     ``start`` is an *input* seek: FFmpeg jumps to the nearest keyframe and then
     decodes and discards up to the exact timestamp, so consecutive segments
     meet frame-accurately without re-reading the whole file each time.
+
+    The circle itself is tiny, but decoding a 4K source is not: with automatic
+    threads that measured 524 MB, against 124 MB at the budget below - and two
+    heavy jobs may run at once in a 1 GB container.
     """
     if size <= 0 or size % 2:
         raise ValueError("video note size must be a positive even number")
@@ -127,6 +133,8 @@ def build_circle_ffmpeg_args(
         "-y",
         "-hide_banner",
         "-loglevel", "error",
+        # Before -i: the decoder's threads, and so its frame buffers.
+        "-threads", str(threads),
     ]
     if start > 0:
         args += ["-ss", f"{start:.3f}"]
@@ -135,6 +143,7 @@ def build_circle_ffmpeg_args(
         "-t", f"{min(duration_limit, TELEGRAM_VIDEO_NOTE_MAX_DURATION):.3f}",
         "-vf", video_filter,
         "-c:v", "libx264",
+        "-threads", str(threads),
         "-profile:v", "main",
         "-level", "3.1",
         "-pix_fmt", "yuv420p",

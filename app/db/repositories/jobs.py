@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Job, JobStatus, JobType
@@ -49,6 +50,26 @@ class JobsRepository:
         job.finished_at = datetime.now(timezone.utc)
         await self._session.flush()
         return job
+
+    async def fail_interrupted(self, *, error_code: str = "interrupted") -> int:
+        """Close out jobs a killed process left mid-flight.
+
+        Run once at startup, before polling begins: nothing of ours is running
+        yet, so anything still marked "processing" belongs to a previous
+        process (a deploy, a restart, an OOM kill) and would otherwise sit in
+        that state forever and skew the statistics.
+        """
+        result = await self._session.execute(
+            update(Job)
+            .where(Job.status == JobStatus.PROCESSING.value)
+            .values(
+                status=JobStatus.FAILED.value,
+                error_code=error_code,
+                finished_at=datetime.now(timezone.utc),
+            )
+        )
+        await self._session.flush()
+        return int(result.rowcount or 0)
 
     async def get(self, job_id: uuid.UUID) -> Job | None:
         return await self._session.get(Job, job_id)

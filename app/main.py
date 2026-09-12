@@ -20,6 +20,7 @@ from app.bot.keyboards.common import main_menu
 from app.bot.middlewares import DbSessionMiddleware, UserMiddleware
 from app.bot.routers import build_root_router
 from app.config import Settings, get_settings
+from app.db.repositories import JobsRepository
 from app.db.session import create_engine, create_session_factory
 from app.logging_config import setup_logging
 from app.services.jobgate import MediaJobGate
@@ -138,6 +139,14 @@ async def run() -> None:
         async with engine.connect() as connection:
             await connection.execute(text("SELECT 1"))
         logger.info("database connected (%s)", describe_database(settings.database_url))
+
+        # A previous process may have been killed mid-job (deploy, restart).
+        # Nothing of ours is running yet, so those rows are finished business.
+        async with session_factory() as session:
+            interrupted = await JobsRepository(session).fail_interrupted()
+            await session.commit()
+        if interrupted:
+            logger.info("closed %d job(s) interrupted by a restart", interrupted)
 
         await bot.delete_webhook(drop_pending_updates=True)
         await register_commands(bot)

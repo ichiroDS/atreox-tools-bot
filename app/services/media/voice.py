@@ -21,7 +21,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
-from app.services.media.base import MediaProcessingError, ProcessedFile, ProcessingErrorCode
+from app.services.media.base import (
+    MAX_ENCODE_THREADS,
+    MediaProcessingError,
+    ProcessedFile,
+    ProcessingErrorCode,
+)
 from app.services.media.probe import build_ffprobe_args
 from app.utils.subprocess import (
     CommandFailed,
@@ -226,6 +231,9 @@ def build_voice_ffmpeg_args(
         "-hide_banner",
         "-nostdin",
         "-loglevel", "error",
+        # Audio decoding is cheap, but every invocation states its budget so
+        # none of them can size a thread pool from the host's CPU count.
+        "-threads", str(MAX_ENCODE_THREADS),
         "-i", str(source),
         "-map", "0:a:0",
         "-vn", "-sn", "-dn",

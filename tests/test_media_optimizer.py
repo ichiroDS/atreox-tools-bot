@@ -700,12 +700,11 @@ def test_files_far_above_20mb_are_within_the_local_limit(tmp_path, clean_env):
 # --- menu, prompt, copy -----------------------------------------------------
 
 
-def test_media_optimizer_sits_after_voice_note_in_the_menu():
-    buttons = [b for row in main_menu().inline_keyboard for b in row]
-    labels = [b.text for b in buttons]
-    assert labels.index("🗜 Media Optimizer") == labels.index("🎙 Voice Note") + 1
-    assert buttons[labels.index("🗜 Media Optimizer")].callback_data == \
-        MenuCallback(action="optimize").pack()
+def test_media_optimizer_sits_next_to_metadata_studio_in_the_menu():
+    rows = main_menu().inline_keyboard
+    # The two tools that work on the file itself share a row.
+    assert [b.text for b in rows[1]] == ["🧹 Metadata Studio", "🗜 Media Optimizer"]
+    assert rows[1][1].callback_data == MenuCallback(action="optimize").pack()
 
 
 def test_the_prompt_starts_with_the_specified_copy():

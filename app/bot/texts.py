@@ -26,36 +26,41 @@ BTN_BATCH = "\U0001f4e6 Batch Mode"
 START = (
     "\u26a1 <b>Atreox Tools</b>\n\n"
     "Free tools for Telegram creators.\n\n"
-    "Turn videos into native circles, manage media metadata and discover "
-    "sticker packs.\n\n"
+    "Make circles and voice messages, clean or change metadata, shrink files, "
+    "add your watermark, or run a whole batch at once.\n\n"
     "Choose a tool below \U0001f447"
 )
 
 MAIN_MENU = "Choose a tool below \U0001f447"
 
+# The order follows the main menu, so the two screens teach the same map.
 HELP = (
     "\u2139\ufe0f <b>Atreox Tools</b>\n\n"
     "\U0001f3a5 <b>Video \u2192 Circle</b>\n"
-    "Turns a regular video into a native Telegram video circle.\n\n"
-    "🎙 <b>Voice Note</b>\n"
-    "Turns audio or the audio track from a video into a native Telegram voice "
-    "message.\n\n"
+    "Turns a regular video into a native Telegram video circle. A long "
+    "video can be split into consecutive circles.\n\n"
+    "\U0001f399 <b>Voice Note</b>\n"
+    "Turns audio, or the audio track from a video, into a native Telegram "
+    "voice message.\n\n"
+    "\U0001f9f9 <b>Metadata Studio</b>\n"
+    "Cleans metadata, or writes a custom device, location and capture "
+    "time.\n\n"
     "\U0001f5dc <b>Media Optimizer</b>\n"
     "Reduces photo and video file sizes while keeping them suitable for "
     "Telegram.\n\n"
     "\U0001f5bc <b>Watermark</b>\n"
-    "Adds your @username or custom branding text to photos and videos. Save "
-    "presets for repeated use.\n\n"
-    "📦 <b>Batch Mode</b>\n"
+    "Adds your @username or custom branding text to photos and videos. "
+    "Save presets for repeated use.\n\n"
+    "\U0001f4e6 <b>Batch Mode</b>\n"
     "Process multiple photos and videos at once with Metadata Cleaner, "
     "Watermark or Media Optimizer.\n\n"
-    "\U0001f9f9 <b>Metadata Studio</b>\n"
-    "Clean metadata or apply a custom content profile to media.\n\n"
     "\U0001f3ad <b>Find Stickers</b>\n"
     "Discover useful Telegram sticker packs by category.\n\n"
     "\U0001f4ce <b>Tip:</b>\n"
-    "For Metadata Studio, send media as a File/Document whenever possible to "
-    "preserve quality."
+    "Send photos and videos as a File whenever the original quality "
+    "matters - Telegram compresses normal uploads before the bot "
+    "receives them.\n\n"
+    "Large files are supported."
 )
 
 # Every claim here is checked against what the code actually does:
@@ -69,6 +74,8 @@ PRIVACY = (
     "deleted once the job finishes, whether it succeeded or failed.\n\n"
     "Locations chosen in Metadata Studio are kept only for the active "
     "processing session and are not stored as permanent user profile data.\n\n"
+    "Watermarks you choose to save as presets are stored with your Telegram id "
+    "until you delete them. Nothing else you send is kept.\n\n"
     "Basic usage data may be stored to understand which tools are used and "
     "improve the service: your Telegram id, username, first name and language, "
     "how you first found the bot, which tools you open, and for each job its "
@@ -693,6 +700,19 @@ def stats_report(stats) -> str:
     else:
         lines.append("No attributed users yet.")
     return "\n".join(lines)
+
+
+def stats_system(
+    *, version: str, database: str, local_api: bool, active_jobs: int, job_slots: int
+) -> str:
+    """Admin-only operational footer: what is running, right now."""
+    return (
+        "\n\n<b>System:</b>\n"
+        f"Version: {version}\n"
+        f"Database: {database}\n"
+        f"Local Bot API: {'on' if local_api else 'off'}\n"
+        f"Active media jobs: {active_jobs}/{job_slots}"
+    )
 
 
 RATE_LIMITED = (

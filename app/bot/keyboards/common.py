@@ -9,19 +9,25 @@ from app.bot import texts
 from app.bot.callbacks import MenuCallback
 
 
+# Seven tools would be a long column, so the menu is paired by what the tools
+# are *for*: the two "make something native for Telegram" ones, the two that
+# work on the file itself, the two that brand or bulk-process, then discovery.
+_MAIN_MENU_ROWS = 2, 2, 2, 1, 2
+
+
 def main_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=texts.BTN_CIRCLE, callback_data=MenuCallback(action="circle"))
     builder.button(text=texts.BTN_VOICE, callback_data=MenuCallback(action="voice"))
+    builder.button(text=texts.BTN_METADATA, callback_data=MenuCallback(action="metadata"))
     builder.button(text=texts.BTN_OPTIMIZE, callback_data=MenuCallback(action="optimize"))
     builder.button(text=texts.BTN_WATERMARK, callback_data=MenuCallback(action="watermark"))
     builder.button(text=texts.BTN_BATCH, callback_data=MenuCallback(action="batch"))
-    builder.button(text=texts.BTN_METADATA, callback_data=MenuCallback(action="metadata"))
     builder.button(text=texts.BTN_STICKERS, callback_data=MenuCallback(action="stickers"))
     # A direct link: one tap to the site, as intended for the menu entry.
     builder.button(text=texts.BTN_GROW, url=texts.ATREOX_URL)
     builder.button(text=texts.BTN_HELP, callback_data=MenuCallback(action="help"))
-    builder.adjust(1)
+    builder.adjust(*_MAIN_MENU_ROWS)
     return builder.as_markup()
 
 

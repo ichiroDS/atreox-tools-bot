@@ -529,53 +529,113 @@ pytest -q --tb=short
 pytest tests/test_media_e2e.py -rs   # real ffmpeg/exiftool, shows skip reasons
 ```
 
-The suite covers config validation, sticker selection (never two stickers from
-one pack), FSM transitions for all three flows, temp-directory cleanup including
-the failure path, device-preset validation, time-of-day interval logic including
-the midnight wraparound, ffmpeg/ExifTool argument construction, ffprobe parsing,
-repositories against SQLite, the seeder, and bot wiring.
+Around a thousand tests. Most of the media ones use **real** media: FFmpeg and
+Pillow generate the fixtures, and the outputs are checked with ffprobe (and, for
+photos, pixel by pixel) rather than trusted. Tests that need a tool **skip**
+when it is missing, so a bare machine still gets a green suite; the Docker image
+has every tool, so everything runs there.
 
-`tests/test_media_e2e.py` runs the real tools and **skips** when a tool is
-missing, so a bare machine still gets a green suite; the Docker image has both
-tools, so everything runs there.
+Beyond the per-feature suites, `tests/test_release_audit.py` holds the
+whole-product properties that quietly rot as a product grows:
+
+- every keyboard button routes to a live handler (no button left pointing at a
+  renamed flow);
+- no FSM state is a dead end - Main Menu, `/start`, `/help` and `/cancel` reach
+  a handler from every state, and no state swallows a message silently;
+- no developer wording ("FFmpeg", "workspace", "traceback", …) in user copy, and
+  `/help` lists the menu's tools in the menu's order;
+- every job type is reported by `/stats`, exactly once;
+- every FFmpeg invocation states an explicit thread budget;
+- no shell is ever spawned, and every tool call goes through the guarded runner;
+- admin surfaces sit behind the admin filter.
+
+Memory is a first-class assertion, not a hope: the optimizer, watermark and
+large-file suites measure FFmpeg's own peak RSS (`-benchmark`) and fail if an
+encode approaches the container's limit.
 
 ---
 
 ## Feature status
 
+Every row below is exercised by the test suite against the real tools
+(FFmpeg/ffprobe, ExifTool, Pillow); nothing here is "implemented but unproven".
+
 | Area | Status |
 | --- | --- |
-| `/start`, menu, help, deep-link source capture | Working |
-| Video → Circle (probe, rotation-aware square crop, scale, H.264 encode, `sendVideoNote`) | Working; verified end-to-end against real ffmpeg |
-| Voice Note (probe gate, OGG/Opus encode + verify, `sendVoice`) | Working; verified end-to-end against real ffmpeg and aiogram's request builder |
-| Media Optimizer (analysis, adaptive presets, H.264/AAC + JPEG/PNG/WEBP, verify, `sendDocument`) | Working; verified end-to-end against real ffmpeg and Pillow |
-| Watermark (text wizard, presets, Pillow + `drawtext`, verify, `sendDocument`) | Working; positions, sizes and opacity measured from the rendered pixels |
-| Batch Mode (album-aware collection, three tools, sequential processing) | Working; verified with real ExifTool/FFmpeg/Pillow batches |
-| Metadata: clean (ExifTool strip, keeps orientation/ICC, verifies output) | Implemented; **not yet run against real ExifTool** |
-| Metadata: change wizard (file → device → location → time of day → confirm) | FSM working; write path implemented, **not yet run against real ExifTool** |
-| Sticker Finder (categories, distinct-pack batches, More/Categories/Menu) | Logic working; **needs real `file_id`s seeded** |
-| Analytics, jobs, error UX, temp cleanup | Working |
-| Docker Compose, migrations | Migration DDL verified offline; **compose not run** (no Docker on the dev machine) |
+| `/start`, menu, `/help`, `/privacy`, deep-link attribution | Working |
+| Video → Circle (rotation-aware crop, 60 s split, `sendVideoNote`) | Working |
+| Voice Note (probe gate, OGG/Opus, `sendVoice`) | Working |
+| Metadata Studio: clean and change (ExifTool, verified writes) | Working |
+| Media Optimizer (adaptive presets, verify, `sendDocument`) | Working |
+| Watermark (wizard, presets, Pillow + `drawtext`) | Working |
+| Batch Mode (albums, three tools, sequential) | Working |
+| Sticker Finder (categories incl. Anime, distinct packs, More) | Working; catalog seeded in production |
+| Analytics, admin `/stats`, error UX, temp cleanup | Working |
+| Migrations (PostgreSQL + SQLite), startup recovery | Working |
 
-**Placeholders / known gaps**
+---
 
-- `scripts/fixtures/stickers.yaml` contains `REPLACE_ME_*` file ids. Until real
-  ids are seeded, Sticker Finder shows the category menu and then the empty-state
-  message, because Telegram rejects each send.
-- The ExifTool paths (clean and change) have unit-tested argument construction
-  and gated end-to-end tests, but ExifTool was not installed on the machine where
-  this was built, so those two tests have never actually executed.
-- Timezones are approximated as `round(longitude / 15)` hours
-  (`LongitudeOffsetTimezoneResolver`). The `TimezoneResolver` protocol exists so
-  a `timezonefinder`-backed implementation can drop in without touching handlers.
+## Known limits (deliberate)
+
+| Limit | Value | Why |
+| --- | --- | --- |
+| Upload / download | `MAX_INPUT_FILE_SIZE_MB` (2000) | The local Bot API's own ceiling; the cloud API would cap at 20 MB. |
+| Result size | `MAX_OUTPUT_FILE_SIZE_MB` (1950) | What the Bot API server will send. |
+| Heavy jobs at once | `MAX_CONCURRENT_MEDIA_JOBS` (2), one per user | 1 GB of RAM; measured encode peaks are 125-450 MB. |
+| FFmpeg threads | 2 (1 above 4K) | FFmpeg otherwise sizes pools from the *host's* cores and gets OOM-killed. |
+| Batch | 20 files (`MAX_BATCH_FILES`), processed one at a time | Reliability over speed in a small container. |
+| Watermark text | 48 characters, one line | It is branding, not a caption. |
+| Watermark presets | 10 per user | A creator brands with a handful of handles. |
+| Photos | 50 MP (JPEG/PNG), 16 MP (WEBP), 12 MP (16-bit PNG) | Measured decoder/encoder memory per format. |
+| Video frames | up to 8K | Beyond that a single frame no longer fits the budget. |
+| Fair use | 12 media actions/min, 80 batch uploads/min | The job gate is the real guard; these only stop hammering. |
+| Not supported | HEIC, animated WEBP/GIF, 16-bit PNG watermarking, MKV metadata writes | Format limits of the underlying tools. |
+
+Timezones are approximated as `round(longitude / 15)` hours
+(`LongitudeOffsetTimezoneResolver`). The `TimezoneResolver` protocol exists so a
+`timezonefinder`-backed implementation can drop in without touching handlers.
+
+---
+
+## Operations
+
+```bash
+railway logs --service atreox-tools-bot            # deploy + runtime logs
+railway logs --service atreox-tools-bot --build ID # build logs
+railway metrics -s atreox-tools-bot --memory       # RAM against the 1 GB limit
+railway deployment list --service atreox-tools-bot # what is running
+railway redeploy --service atreox-tools-bot        # restart without a rebuild
+railway status                                     # services in the project
+```
+
+**What runs at startup**, in order: wait for PostgreSQL → `alembic upgrade head`
+(under an advisory lock, so two instances cannot race) → sweep leftover job
+workspaces from a killed process → close jobs left in `processing` by that same
+kill → register the command menu → start polling.
+
+**Recovery**
+
+- *A deploy overlaps the old instance*: one `TelegramConflictError` appears and
+  polling reconnects within ~15 s. Nothing to do.
+- *Files stop arriving / getFile fails*: check the `telegram-bot-api` service
+  first - the bot depends on it. `railway logs --service telegram-bot-api`.
+- *Rolling back to the cloud Bot API*: delete `BOT_API_BASE_URL` and
+  `BOT_API_FILES_URL` from the bot service and redeploy. `logOut` has already
+  been done, so no new one is needed; file limits drop back to 20/50 MB.
+- *A job is stuck*: it cannot outlive a restart - `fail_interrupted()` closes
+  anything left in `processing` at boot, and `TEMP_ROOT` is swept at the same
+  time. `/stats` shows the live count of active media jobs.
+- *Disk or memory pressure*: the job gate answers "busy" instead of queueing;
+  workspaces are per job and deleted in a `finally`.
 
 ---
 
 ## Production notes
 
-- **File size.** The cloud Bot API caps downloads at 20 MB and uploads at
-  50 MB; the effective limits follow whichever API is configured. See
-  *Local Bot API server* above to lift them.
+- **File size.** Production runs the self-hosted Bot API, so the limits are the
+  configured service limits (2000 MB in, 1950 MB out). On the cloud API the
+  effective caps drop to Telegram's own 20 MB down / 50 MB up - see
+  *Local Bot API server* above.
 - **FSM storage.** `MemoryStorage` is in-process, so wizard state is lost on
   restart and the bot cannot be scaled horizontally as-is. Switch to Redis
   storage before running more than one instance.
@@ -585,4 +645,9 @@ tools, so everything runs there.
   work and answers "busy" instead of queueing.
 - **Disk.** Workspaces are removed in `finally`, stale ones are swept at
   startup, and every job reserves disk before it starts, keeping 512 MB free.
-- **Secrets.** `.env` only. Nothing is logged that could identify media content.
+- **Memory.** The container has 1 GB. Every FFmpeg call states its thread
+  budget, photos have per-format pixel caps, batches run one file at a time,
+  and media is streamed to and from disk - never held in the bot's memory.
+- **Secrets.** `.env` locally, Railway variables in production; `.env` is
+  gitignored and no token, key or password is ever logged. Database URLs are
+  redacted before they reach the log.

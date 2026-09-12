@@ -250,9 +250,12 @@ def test_limits_are_per_user_and_per_bucket():
 
 def test_default_limits_leave_real_usage_alone():
     limiter = RateLimiter()
-    # Eight conversions inside a minute is already heavy manual use.
-    assert all(limiter.allow("media", 1, now=i * 5) for i in range(8))
-    assert limiter.allow("media", 1, now=39) is False
+    # A dozen conversions inside a minute is already heavy manual use, and the
+    # job gate - not this - is what bounds the expensive work.
+    assert all(limiter.allow("media", 1, now=i * 4) for i in range(12))
+    assert limiter.allow("media", 1, now=45) is False
+    # Collecting a batch uses its own, roomier bucket.
+    assert all(limiter.allow("batch_upload", 1, now=i) for i in range(40))
 
 
 def test_reset_clears_history():

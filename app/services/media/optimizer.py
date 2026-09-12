@@ -30,7 +30,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Sequence
 
-from app.services.media.base import MediaProcessingError, ProcessingErrorCode
+from app.services.media.base import (
+    MAX_ENCODE_THREADS,
+    MediaProcessingError,
+    ProcessingErrorCode,
+)
 from app.services.media.probe import _stream_rotation, build_ffprobe_args
 from app.services.media.voice import classify_encode_failure
 from app.utils.subprocess import (
@@ -70,16 +74,11 @@ _DEEP_PNG_PIX_FMTS = frozenset({"rgb48be", "rgb48le", "rgba64be", "rgba64le", "y
 MAX_FRAME_RATE = 60.0
 
 # --- memory budget ------------------------------------------------------------
-# The bot runs in a small container (Railway: 1 GB, 2 vCPU). FFmpeg sizes its
-# thread pools from the CPUs it can *see* - the host's, not the container's
-# quota - and every decoder and encoder thread holds frames of its own. Left
-# automatic, a 2160x3840 60 fps source peaked at 1-1.7 GB and the kernel killed
-# the encode (rc -9). So threads and x264's lookahead are explicit, sized from
-# measurements of ffmpeg's peak RSS on exactly that source:
-#   automatic threads            967-1662 MB
-#   2 threads, lookahead 10       ~340 MB (High), ~220 MB (Small)
-# which keeps two concurrent heavy jobs plus the bot itself under 1 GB.
-MAX_ENCODE_THREADS = 2
+# Threads come from MAX_ENCODE_THREADS (see base.py): left automatic, a
+# 2160x3840 60 fps source peaked at 1-1.7 GB here and the kernel killed the
+# encode (rc -9). With two threads and the lookahead below it is ~340 MB
+# (High) and ~220 MB (Small), so two concurrent heavy jobs plus the bot stay
+# under 1 GB.
 # Output frames x264 buffers for rate control; the "fast" preset's default of
 # 30 alone cost ~140 MB at 1080p.
 RC_LOOKAHEAD = 10

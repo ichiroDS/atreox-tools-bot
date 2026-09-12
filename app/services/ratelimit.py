@@ -29,8 +29,10 @@ class Limit:
 
 # Media jobs cost CPU and disk; sticker batches cost a burst of API calls.
 DEFAULT_LIMITS: dict[str, Limit] = {
-    # A real user converting clips back to back stays well under this.
-    "media": Limit(count=8, per_seconds=60.0),
+    # A real user converting clips back to back stays well under this. The job
+    # gate (heavy slots, one heavy job per user) is the actual protection
+    # against expensive work; this only stops hammering.
+    "media": Limit(count=12, per_seconds=60.0),
     "stickers": Limit(count=12, per_seconds=60.0),
     # Collecting a batch is cheap - the files are only remembered, not fetched -
     # and an album of 20 arrives in a second, so this bucket is roomy. It still

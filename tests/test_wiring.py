@@ -89,10 +89,10 @@ def test_main_menu_lists_the_tools_growth_and_help():
     assert labels == [
         BTN_CIRCLE,
         BTN_VOICE,
+        BTN_METADATA,
         BTN_OPTIMIZE,
         BTN_WATERMARK,
         BTN_BATCH,
-        BTN_METADATA,
         BTN_STICKERS,
         texts.BTN_GROW,
         BTN_HELP,

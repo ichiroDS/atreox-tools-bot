@@ -144,6 +144,14 @@ class Settings(BaseSettings):
 
     # Comma separated Telegram user ids allowed to use dev/seed helpers.
     admin_user_ids: str = ""
+    # Railway sets this for every deploy; it is what /stats reports as the
+    # running version. Empty locally, which reads as "dev".
+    railway_git_commit_sha: str | None = None
+
+    @property
+    def version(self) -> str:
+        """The running build, short enough to read at a glance."""
+        return (self.railway_git_commit_sha or "dev")[:7]
 
     # --- Feature tuning ---------------------------------------------------
     stickers_per_batch: int = Field(default=6, ge=1, le=20)

@@ -471,9 +471,9 @@ def test_audio_sources_keep_a_safe_audio_extension_on_disk():
 def test_voice_note_sits_second_in_the_main_menu():
     buttons = [b for row in main_menu().inline_keyboard for b in row]
     assert [b.text for b in buttons] == [
-        "🎥 Video → Circle", "🎙 Voice Note", "🗜 Media Optimizer", "🖼 Watermark",
-        "📦 Batch Mode", "🧹 Metadata Studio", "🎭 Find Stickers", "🚀 Grow My Channel",
-        "ℹ️ Help",
+        "🎥 Video → Circle", "🎙 Voice Note", "🧹 Metadata Studio",
+        "🗜 Media Optimizer", "🖼 Watermark", "📦 Batch Mode",
+        "🎭 Find Stickers", "🚀 Grow My Channel", "ℹ️ Help",
     ]
     assert buttons[1].callback_data == MenuCallback(action="voice").pack()
 
@@ -487,11 +487,11 @@ def test_the_prompt_copy_is_exactly_as_specified():
 
 
 def test_help_describes_the_voice_note():
-    assert "🎙 <b>Voice Note</b>\nTurns audio or the audio track from a video into a " \
-           "native Telegram voice message." in texts.HELP
-    # The existing sections are still there, in order.
-    assert texts.HELP.index("Video → Circle") < texts.HELP.index("Voice Note") \
-        < texts.HELP.index("Media Optimizer") < texts.HELP.index("Metadata Studio")
+    assert "🎙 <b>Voice Note</b>" in texts.HELP
+    assert "Turns audio, or the audio track from a video, into a native Telegram " in texts.HELP
+    # Help lists the tools in the same order as the menu.
+    assert texts.HELP.index("Video → Circle") < texts.HELP.index("Voice Note")
+    assert texts.HELP.index("Voice Note") < texts.HELP.index("Metadata Studio")
 
 
 async def test_opening_the_tool_prompts_and_records_the_feature(session):
