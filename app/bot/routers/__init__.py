@@ -2,6 +2,7 @@ from aiogram import Router
 
 from app.bot.routers import (
     admin,
+    batch,
     circle,
     fallback,
     metadata,
@@ -26,6 +27,7 @@ def build_root_router() -> Router:
     root.include_router(voice.router)
     root.include_router(optimizer.router)
     root.include_router(watermark.router)
+    root.include_router(batch.router)
     root.include_router(metadata.router)
     root.include_router(stickers.router)
     root.include_router(admin.router)

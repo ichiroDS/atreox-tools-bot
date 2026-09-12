@@ -28,6 +28,12 @@ class OptimizeCallback(CallbackData, prefix="opt"):
     value: str = ""  # small | balanced | high
 
 
+class BatchCallback(CallbackData, prefix="bt"):
+    # done | tool | preset | new | pos | style | size | opacity | cancel
+    action: str
+    value: str = ""  # a tool name, an enum value, or a preset id
+
+
 class WatermarkCallback(CallbackData, prefix="wm"):
     # enter | presets | pos | style | size | opacity | apply | save | change
     # detail | use | rename | edit | delete | delete_yes | new | back | cancel

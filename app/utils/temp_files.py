@@ -97,9 +97,15 @@ class JobWorkspace:
         return total
 
 
+# Batch workspaces are named "batch_<uuid>" so a directory listing says what
+# they are; the sweeper below still recognises them.
+BATCH_PREFIX = "batch_"
+
+
 def _is_workspace_name(name: str) -> bool:
+    candidate = name[len(BATCH_PREFIX):] if name.startswith(BATCH_PREFIX) else name
     try:
-        uuid.UUID(name)
+        uuid.UUID(candidate)
     except ValueError:
         return False
     return True
@@ -110,8 +116,9 @@ def sweep_stale_workspaces(root: Path) -> int:
 
     Run once at startup, before any job exists: a hard kill (deploy, OOM)
     skips the ``finally`` that normally deletes a workspace, and large media
-    left there would quietly eat the ephemeral disk. Only UUID-named
-    directories - the ones :func:`job_workspace` creates - are touched.
+    left there would quietly eat the ephemeral disk. Only the UUID-named
+    directories :func:`job_workspace` creates (with or without the batch
+    prefix) are touched.
     """
     root = Path(root)
     if not root.is_dir():
@@ -128,11 +135,11 @@ def sweep_stale_workspaces(root: Path) -> int:
 
 @asynccontextmanager
 async def job_workspace(
-    root: Path, job_id: uuid.UUID | None = None
+    root: Path, job_id: uuid.UUID | None = None, *, prefix: str = ""
 ) -> AsyncIterator[JobWorkspace]:
-    """Create ``{root}/{job_id}`` and always remove it on exit."""
+    """Create ``{root}/{prefix}{job_id}`` and always remove it on exit."""
     job_id = job_id or uuid.uuid4()
-    path = Path(root) / str(job_id)
+    path = Path(root) / f"{prefix}{job_id}"
     await asyncio.to_thread(path.mkdir, parents=True, exist_ok=True)
     try:
         yield JobWorkspace(job_id=job_id, path=path)

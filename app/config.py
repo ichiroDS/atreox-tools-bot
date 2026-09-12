@@ -147,6 +147,8 @@ class Settings(BaseSettings):
 
     # --- Feature tuning ---------------------------------------------------
     stickers_per_batch: int = Field(default=6, ge=1, le=20)
+    # Files one batch may hold. Each is processed on its own, one at a time.
+    max_batch_files: int = Field(default=20, ge=1, le=50)
     # Telegram refuses video notes longer than 60 seconds.
     video_note_max_duration: int = Field(default=60, ge=1, le=60)
     # Square side of the produced circle, must stay even for yuv420p.

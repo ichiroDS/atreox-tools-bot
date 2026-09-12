@@ -21,6 +21,7 @@ BTN_MAIN_MENU = "\U0001f3e0 Main Menu"
 # Alias kept so call sites that read better as "home" still work.
 BTN_MAIN_MENU_HOME = BTN_MAIN_MENU
 BTN_CANCEL = "\u274c Cancel"
+BTN_BATCH = "\U0001f4e6 Batch Mode"
 
 START = (
     "\u26a1 <b>Atreox Tools</b>\n\n"
@@ -45,6 +46,9 @@ HELP = (
     "\U0001f5bc <b>Watermark</b>\n"
     "Adds your @username or custom branding text to photos and videos. Save "
     "presets for repeated use.\n\n"
+    "📦 <b>Batch Mode</b>\n"
+    "Process multiple photos and videos at once with Metadata Cleaner, "
+    "Watermark or Media Optimizer.\n\n"
     "\U0001f9f9 <b>Metadata Studio</b>\n"
     "Clean metadata or apply a custom content profile to media.\n\n"
     "\U0001f3ad <b>Find Stickers</b>\n"
@@ -382,6 +386,68 @@ WATERMARK_FONT_MISSING = (
     "Please try again later."
 )
 
+# --- Batch mode -------------------------------------------------------------
+BATCH_PROMPT = (
+    "📦 Send me multiple photos or videos.\n\n"
+    "You can send them one by one or as a Telegram album.\n\n"
+    "When you're done, press:\n"
+    "✅ Done Uploading"
+)
+BATCH_CHOOSE_TOOL = "What should I do with these files?"
+BATCH_EMPTY = "Send at least one photo or video first."
+BATCH_UNSUPPORTED = (
+    "⚠️ I skipped that one. A batch takes photos (JPEG, PNG, WEBP) and videos "
+    "(MP4, MOV, WEBM, MKV…) — as media or as Files."
+)
+BATCH_RUNNING = "⏳ Your batch is still running. I'll tell you when it's done."
+BATCH_WATERMARK_PROMPT = "Which watermark should I use for every file?"
+BATCH_OPTIMIZE_PROMPT = "Which preset should I use for every file?"
+
+BTN_BATCH_DONE = "✅ Done Uploading"
+BTN_BATCH_CLEAN = "🧹 Clean Metadata"
+BTN_BATCH_WATERMARK = "🖼 Add Watermark"
+BTN_BATCH_OPTIMIZE = "🗜 Optimize Media"
+BTN_BATCH_NEW_WATERMARK = "✏️ New Watermark"
+BTN_BATCH_NEW = "📦 New Batch"
+
+
+def batch_collected(count: int, maximum: int) -> str:
+    """The one collection message, edited as each file arrives."""
+    remaining = (
+        f"That's the maximum of {maximum}. Press Done Uploading."
+        if count >= maximum
+        else "Send more or press Done Uploading."
+    )
+    return (
+        "📦 <b>Batch</b>\n"
+        f"{count} {'file' if count == 1 else 'files'} received\n\n"
+        f"{remaining}"
+    )
+
+
+def batch_full(maximum: int) -> str:
+    return f"📦 A batch holds up to {maximum} files. Press Done Uploading."
+
+
+def batch_progress(done: int, total: int) -> str:
+    return f"⏳ <b>Processing batch</b>\n\n{done} / {total} completed"
+
+
+def batch_summary(
+    *, total: int, successful: int, failed: int, skipped: int = 0, cancelled: bool = False
+) -> str:
+    summary = (
+        f"{'📦 Batch stopped' if cancelled else '✅ Batch complete'}\n\n"
+        f"Files: {total}\n"
+        f"Successful: {successful}\n"
+        f"Failed: {failed}"
+    )
+    if skipped:
+        # Honest about the optimizer's "nothing to gain" outcome.
+        summary += f"\nAlready efficient (original kept): {skipped}"
+    return summary
+
+
 _KB = 1024
 _MB = 1024 * 1024
 _GB = 1024 * _MB
@@ -610,6 +676,7 @@ def stats_report(stats) -> str:
         f"🎙 Voice notes: {stats.voice_notes}",
         f"🗜 Optimizations: {stats.optimizations}",
         f"🖼 Watermarks: {stats.watermarks}",
+        f"📦 Batches: {stats.batches}",
         f"🧹 Metadata cleans: {stats.metadata_cleans}",
         f"✏️ Metadata changes: {stats.metadata_changes}",
         f"🎭 Sticker searches: {stats.sticker_searches}",

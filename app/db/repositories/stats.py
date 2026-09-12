@@ -33,6 +33,8 @@ class Stats:
     # Optimizations that actually delivered a smaller file.
     optimizations: int = 0
     watermarks: int = 0
+    # Batches that ran to the end; each file inside also has its own job row.
+    batches: int = 0
     metadata_cleans: int = 0
     metadata_changes: int = 0
     sticker_searches: int = 0
@@ -101,6 +103,7 @@ class StatsRepository:
                 Job.output_size.is_not(None),
             ),
             watermarks=await successful(JobType.WATERMARK),
+            batches=await events(Feature.BATCH_COMPLETED),
             metadata_cleans=await successful(JobType.METADATA_CLEAN),
             metadata_changes=await successful(JobType.METADATA_CHANGE),
             sticker_searches=await events(Feature.STICKERS),

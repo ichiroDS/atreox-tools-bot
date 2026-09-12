@@ -1,7 +1,7 @@
 # Atreox Tools Bot
 
 A free Telegram utility bot for channel owners, creators and AI influencer
-operators. It ships six tools:
+operators. It ships six tools, plus a batch mode:
 
 | Tool | What it does |
 | --- | --- |
@@ -9,6 +9,7 @@ operators. It ships six tools:
 | 🎙 **Voice Note** | Turns an audio file, or the sound of a video, into a native Telegram voice message. |
 | 🗜 **Media Optimizer** | Shrinks photos and videos (Small / Balanced / High Quality) and returns them as a File. |
 | 🖼 **Watermark** | Draws a handle or custom line on photos and videos, with saved presets. |
+| 📦 **Batch Mode** | Runs Clean Metadata, Watermark or the Optimizer over many files in one go. |
 | 🧹 **Metadata Studio** | Cleans metadata, or rewrites device / location / capture time. |
 | 🎭 **Sticker Finder** | Discovery: six stickers, each from a *different* pack, so the user can open and add the pack they like. |
 
@@ -26,8 +27,8 @@ app/
     texts.py               every user-facing string
     callbacks.py           typed callback-data factories
     errors.py              internal failure -> friendly copy
-    routers/               start, circle, voice, optimizer, watermark, metadata,
-                           stickers, admin, fallback
+    routers/               start, circle, voice, optimizer, watermark, batch,
+                           metadata, stickers, admin, fallback
     keyboards/             built from the preset/category catalogs, not hardcoded
     states/                FSM state groups
     middlewares/           db session per update, user upsert + activity
@@ -46,6 +47,7 @@ app/
       image_worker.py      Pillow photo re-encoder, run as its own process
       watermark.py         watermark layout, drawtext builder, verification
       watermark_worker.py  Pillow watermark renderer, run as its own process
+      batch.py             one tool applied to each file of a batch, item by item
       metadata.py          ExifTool clean/change/verify (+ pure arg builders)
     stickers/
       catalog.py           configurable categories
@@ -196,6 +198,36 @@ Presets live in `watermark_presets` (max 10 per user, unique name per user) and
 store the text *and* the look, so a repeat is two taps. Every read and write is
 scoped to the owner's Telegram id.
 
+### Batch Mode
+
+Files arrive one by one or as a Telegram album (which arrives as separate
+updates - they join the same batch, and a re-delivered item is ignored). Only
+references are kept: nothing is fetched until processing starts, so collecting
+costs no transfers. One message counts the batch and is edited as it grows, and
+a late album item still joins after **✅ Done Uploading** was pressed.
+`MAX_BATCH_FILES` (20) caps it; collection uses its own roomy rate-limit bucket
+so a legitimate album never trips the per-media limit, while a flood still does.
+
+A batch runs **one tool over every file**: Clean Metadata, Watermark (a saved
+preset, or one configured once for the batch) or the Optimizer (one preset).
+Each is the existing service, unchanged - a batch cannot drift from what the
+single-file tool does.
+
+Processing is **sequential on purpose**. The container has little memory and one
+4K encode already claims a large part of it, so a batch never starts a second
+job of its own, and every item still passes the shared job gate - a busy server
+makes an item wait briefly rather than fail. Each item gets its own
+`batch_<uuid>/item_001/` directory, which is removed as soon as that item is
+done; the whole batch workspace goes at the end, whatever happened. Results are
+sent as Files as they finish (`atreox_cleaned_`, `atreox_watermarked_`,
+`atreox_optimized_`), one progress message is edited as the count rises, a
+failed item is recorded and the rest continue, and Cancel stops the run after
+the file in flight. An optimizer item that cannot be made meaningfully smaller
+keeps its original and is reported as such rather than replaced.
+
+Each file keeps its own `jobs` row (so per-tool stats stay true), and the batch
+itself records `batch_started` / `batch_completed` feature events.
+
 ---
 
 ## Local development
@@ -317,6 +349,7 @@ an ephemeral container filesystem is exactly right.
 | `FFMPEG_BIN` / `FFPROBE_BIN` / `EXIFTOOL_BIN` | tool name | Override binary paths. |
 | `WATERMARK_FONT` | *(empty)* | TrueType font for the watermark. Empty = find a known system font. |
 | `STICKERS_PER_BATCH` | `6` | Stickers per Sticker Finder batch (one per pack). |
+| `MAX_BATCH_FILES` | `20` | Files one Batch Mode run may hold. |
 | `VIDEO_NOTE_MAX_DURATION` | `60` | Longest single circle (Telegram's cap is 60 s). Longer videos are offered a split. |
 | `VIDEO_NOTE_SIZE` | `384` | Square side of the circle; must be even. |
 | `ADMIN_USER_IDS` | *(empty)* | Comma-separated Telegram ids allowed to run `/stats` and the sticker `file_id` helper. |
@@ -479,6 +512,8 @@ re-running the sync. Categories live in `app/services/stickers/catalog.py`.
 - **Watermark presets** — the only user content stored on purpose:
   `watermark_presets` keeps the text and look a user asked to save, and
   nothing else. Uploaded media is never stored.
+- **Batches** — `batch_started` / `batch_completed` events, plus the ordinary
+  per-file `jobs` rows, so a batch never hides what it actually did.
 
 > Deviation from the original spec, called out deliberately: `feature_events` is
 > a fifth table, added because "track feature selected" has no home in the four
@@ -515,6 +550,7 @@ tools, so everything runs there.
 | Voice Note (probe gate, OGG/Opus encode + verify, `sendVoice`) | Working; verified end-to-end against real ffmpeg and aiogram's request builder |
 | Media Optimizer (analysis, adaptive presets, H.264/AAC + JPEG/PNG/WEBP, verify, `sendDocument`) | Working; verified end-to-end against real ffmpeg and Pillow |
 | Watermark (text wizard, presets, Pillow + `drawtext`, verify, `sendDocument`) | Working; positions, sizes and opacity measured from the rendered pixels |
+| Batch Mode (album-aware collection, three tools, sequential processing) | Working; verified with real ExifTool/FFmpeg/Pillow batches |
 | Metadata: clean (ExifTool strip, keeps orientation/ICC, verifies output) | Implemented; **not yet run against real ExifTool** |
 | Metadata: change wizard (file → device → location → time of day → confirm) | FSM working; write path implemented, **not yet run against real ExifTool** |
 | Sticker Finder (categories, distinct-pack batches, More/Categories/Menu) | Logic working; **needs real `file_id`s seeded** |

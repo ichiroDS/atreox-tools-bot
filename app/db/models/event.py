@@ -14,6 +14,9 @@ class Feature(str, enum.Enum):
     VOICE_NOTE = "voice_note"
     MEDIA_OPTIMIZE = "media_optimize"
     WATERMARK = "watermark"
+    # One batch: started when processing begins, completed when it ends.
+    BATCH_STARTED = "batch_started"
+    BATCH_COMPLETED = "batch_completed"
     # Which Media Optimizer preset was picked.
     OPTIMIZE_SMALL = "optimize_small"
     OPTIMIZE_BALANCED = "optimize_balanced"
