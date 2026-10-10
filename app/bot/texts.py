@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # --- Brand ------------------------------------------------------------------
-ATREOX_URL = "https://atreoxai.com"
+ATREOX_URL = "https://www.atreox.ai"
 
 # --- Menu -------------------------------------------------------------------
 BTN_CIRCLE = "\U0001f3a5 Video \u2192 Circle"
@@ -105,7 +105,7 @@ CTA = (
 )
 BTN_CTA = "\U0001f680 Explore AtreoxAI"
 CTA_OPEN = "\U0001f680 <b>AtreoxAI</b>\n\nTap below to open it \U0001f447"
-BTN_CTA_OPEN = "\U0001f680 Open atreoxai.com"
+BTN_CTA_OPEN = "\U0001f680 Open atreox.ai"
 
 # --- Circle -----------------------------------------------------------------
 CIRCLE_PROMPT = (

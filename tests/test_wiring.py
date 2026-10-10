@@ -110,7 +110,7 @@ def test_grow_my_channel_opens_atreox_directly():
         if b.text == texts.BTN_GROW
     ][0]
     # A plain link: one tap, no interstitial.
-    assert grow.url == "https://atreoxai.com"
+    assert grow.url == "https://www.atreox.ai"
 
 
 def test_help_offers_privacy_atreox_and_a_way_home():
